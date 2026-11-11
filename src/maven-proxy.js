@@ -1,4 +1,14 @@
-import { ConfigError, DEFAULT_USER_AGENT, resolveConfig } from './config.js';
+import {
+  ConfigError,
+  DEFAULT_USER_AGENT,
+  isSupportedHostname,
+  looksLikeUpstreamHost,
+  normalizeHostname,
+  parseUpstreamRoute,
+  resolveAllowedHosts,
+  resolveConfig,
+  resolveHostConfig,
+} from './config.js';
 import { base64EncodeUtf8 } from './base64.js';
 
 const HEALTH_PATH = '/-/health';
@@ -36,43 +46,46 @@ const FORWARD_RESPONSE_HEADERS = [
 /**
  * ESA Worker 入口的实际处理函数。
  *
- * 不读写 KV、不调用 Cache API、不保存任何响应内容：
- * 每个请求都直接转发到 MAVEN_SNAPSHOT_URL，并可选地注入 Basic 认证。
+ * 两种访问方式：
+ *   1. 路径模式（多仓库）：
+ *      /maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/...
+ *      -> https://maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/...
+ *   2. 兼容旧版的单仓库模式：
+ *      /com/...
+ *      -> MAVEN_SNAPSHOT_URL + /com/...
+ *
+ * 不读写 KV、不调用 Cache API、不保存任何响应内容。
  */
 export async function handleRequest(request, env = {}) {
-  let config;
-  try {
-    config = resolveConfig(env);
-  } catch (error) {
-    if (error instanceof ConfigError) {
-      return textResponse(500, error.message);
-    }
-    throw error;
-  }
-
   const url = new URL(request.url);
 
   if (url.pathname === HEALTH_PATH) {
     if (!isReadMethod(request.method)) {
       return methodNotAllowed();
     }
-    return jsonResponse(request, 200, {
-      status: 'ok',
-      upstream: config.upstream,
-      authentication: config.authEnabled ? 'basic' : 'anonymous',
-    });
+    return jsonResponse(request, 200, describeRuntime(env));
   }
 
   if (url.pathname === '/' || url.pathname === '') {
     if (!isReadMethod(request.method)) {
       return methodNotAllowed();
     }
+    const runtime = describeRuntime(env);
     return jsonResponse(request, 200, {
       name: 'esa-maven',
-      description: '阿里云 ESA Workers Maven 快照仓库代理（只代理，不存储）',
-      upstream: config.upstream,
-      authentication: config.authEnabled ? 'basic' : 'anonymous',
-      endpoints: ['GET /<maven-path>', 'HEAD /<maven-path>', 'GET /-/health'],
+      description: '阿里云 ESA Workers Maven 仓库代理（多上游、只代理不存储）',
+      usage: '/<upstream-host>/<upstream-path>/<maven-path>',
+      example:
+        '/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/...',
+      allowedHosts: runtime.allowedHosts,
+      hosts: runtime.hosts,
+      legacy: runtime.legacy,
+      endpoints: [
+        'GET /<upstream-host>/<upstream-path>/<maven-path>',
+        'HEAD /<upstream-host>/<upstream-path>/<maven-path>',
+        'GET /<maven-path>  (兼容旧版单仓库模式)',
+        'GET /-/health',
+      ],
     });
   }
 
@@ -80,7 +93,61 @@ export async function handleRequest(request, env = {}) {
     return methodNotAllowed();
   }
 
-  const target = buildUpstreamUrl(config.upstream, url);
+  const route = parseUpstreamRoute(url.pathname);
+  if (route && looksLikeUpstreamHost(route.segment)) {
+    return handleMultiUpstream(request, url, route, env);
+  }
+
+  return handleLegacyUpstream(request, url, env);
+}
+
+function handleMultiUpstream(request, url, route, env) {
+  const host = normalizeHostname(route.host);
+
+  if (!isSupportedHostname(host)) {
+    return textResponse(
+      400,
+      `无法识别的上游主机：${route.segment}。路径格式：/<upstream-host>/<upstream-path>/<maven-path>`,
+    );
+  }
+
+  let allowedHosts;
+  try {
+    allowedHosts = resolveAllowedHosts(env);
+  } catch (error) {
+    return configErrorResponse(error);
+  }
+
+  if (!allowedHosts.includes('*') && !allowedHosts.includes(host)) {
+    return textResponse(
+      403,
+      `上游主机 ${host} 不在 MAVEN_ALLOWED_HOSTS 中`,
+    );
+  }
+
+  let config;
+  try {
+    config = resolveHostConfig(host, env);
+  } catch (error) {
+    return configErrorResponse(error);
+  }
+
+  const target = buildPathUpstreamUrl(host, route.rest, url.search);
+  return proxyRequest(request, target, config);
+}
+
+function handleLegacyUpstream(request, url, env) {
+  let config;
+  try {
+    config = resolveConfig(env);
+  } catch (error) {
+    return configErrorResponse(error);
+  }
+
+  return proxyRequest(request, buildUpstreamUrl(config.upstream, url), config);
+}
+
+async function proxyRequest(request, target, config) {
   const headers = buildUpstreamHeaders(request, config);
 
   let upstream;
@@ -97,6 +164,17 @@ export async function handleRequest(request, env = {}) {
   }
 
   return toClientResponse(upstream, request.method);
+}
+
+function configErrorResponse(error) {
+  if (error instanceof ConfigError) {
+    return textResponse(500, error.message);
+  }
+  throw error;
+}
+
+export function buildPathUpstreamUrl(host, rest, search = '') {
+  return `https://${host}/${rest}${search}`;
 }
 
 export function buildUpstreamUrl(upstream, url) {
@@ -140,7 +218,7 @@ export function toClientResponse(upstream, method) {
   }
 
   if (upstream.status === 401 || upstream.status === 403) {
-    // 便于排查是上游 GitHub Packages 认证/权限问题，而不是客户端未带密码。
+    // 便于排查是上游认证/权限问题，而不是客户端未带密码。
     headers.set('x-esa-maven-upstream-status', String(upstream.status));
   }
 
@@ -152,6 +230,60 @@ export function toClientResponse(upstream, method) {
     statusText: upstream.statusText,
     headers,
   });
+}
+
+function describeRuntime(env) {
+  const runtime = {
+    status: 'ok',
+    multiUpstream: true,
+    allowedHosts: [],
+    hosts: [],
+  };
+
+  try {
+    runtime.allowedHosts = resolveAllowedHosts(env);
+  } catch (error) {
+    runtime.status = 'degraded';
+    runtime.error = errorMessage(error);
+  }
+
+  runtime.hosts = runtime.allowedHosts
+    .filter((host) => host !== '*')
+    .map((host) => {
+      try {
+        const config = resolveHostConfig(host, env);
+        return {
+          host,
+          envPrefix: config.envPrefix,
+          authentication: config.authEnabled ? 'basic' : 'anonymous',
+        };
+      } catch (error) {
+        return {
+          host,
+          authentication: 'misconfigured',
+          error: errorMessage(error),
+        };
+      }
+    });
+
+  if (runtime.allowedHosts.includes('*')) {
+    runtime.note = 'MAVEN_ALLOWED_HOSTS=* 允许任意合法域名，请谨慎使用';
+  }
+
+  try {
+    const legacy = resolveConfig(env);
+    runtime.legacy = {
+      upstream: legacy.upstream,
+      authentication: legacy.authEnabled ? 'basic' : 'anonymous',
+    };
+  } catch (error) {
+    runtime.legacy = {
+      authentication: 'misconfigured',
+      error: errorMessage(error),
+    };
+  }
+
+  return runtime;
 }
 
 function isReadMethod(method) {

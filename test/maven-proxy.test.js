@@ -9,6 +9,9 @@ const DEFAULT_UPSTREAM =
 const ARTIFACT_PATH =
   '/com/alibaba/cloud/spring-cloud-alibaba-dependencies/2023.0.3.2-SNAPSHOT/spring-cloud-alibaba-dependencies-2023.0.3.2-SNAPSHOT.pom';
 
+const MULTI_PREFIX = '/maven.pkg.github.com/alibaba/spring-cloud-alibaba';
+const MULTI_ARTIFACT_PATH = `${MULTI_PREFIX}${ARTIFACT_PATH}`;
+
 function mockFetch(responseFactory) {
   const calls = [];
   const original = globalThis.fetch;
@@ -190,7 +193,9 @@ test('HEAD 请求透传但不返回响应体', async () => {
   );
   try {
     const response = await handleRequest(
-      new Request('https://maven.example.com/foo.jar', { method: 'HEAD' }),
+      new Request('https://maven.example.com/com/example/foo.jar', {
+        method: 'HEAD',
+      }),
       {},
     );
 
@@ -337,6 +342,262 @@ test('Basic 认证支持 UTF-8 凭据', async () => {
       fetchMock.calls[0].init.headers.get('authorization'),
       `Basic ${base64EncodeUtf8('用户:密码')}`,
     );
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('路径模式按上游主机转发并注入 host 级凭据', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    const response = await handleRequest(
+      new Request(`https://maven.example.com${MULTI_ARTIFACT_PATH}?download=1`),
+      {
+        MAVEN_PKG_GITHUB_COM_USERNAME: 'github-user',
+        MAVEN_PKG_GITHUB_COM_PASSWORD: 'test-token',
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(fetchMock.calls.length, 1);
+    assert.equal(
+      fetchMock.calls[0].input,
+      `https://maven.pkg.github.com/alibaba/spring-cloud-alibaba${ARTIFACT_PATH}?download=1`,
+    );
+    assert.equal(
+      fetchMock.calls[0].init.headers.get('authorization'),
+      `Basic ${base64EncodeUtf8('github-user:test-token')}`,
+    );
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('路径模式不使用旧版 MAVEN_REPO_* 凭据', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    await handleRequest(new Request(`https://maven.example.com${MULTI_ARTIFACT_PATH}`), {
+      MAVEN_REPO_USERNAME: 'legacy-user',
+      MAVEN_REPO_PASSWORD: 'legacy-password',
+    });
+
+    assert.equal(fetchMock.calls[0].init.headers.has('authorization'), false);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('未列入 MAVEN_ALLOWED_HOSTS 的主机返回 403', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    const response = await handleRequest(
+      new Request(
+        'https://maven.example.com/repo1.maven.org/maven2/com/example/foo/1.0/foo-1.0.pom',
+      ),
+      {},
+    );
+
+    assert.equal(response.status, 403);
+    assert.match(await response.text(), /MAVEN_ALLOWED_HOSTS/);
+    assert.equal(fetchMock.calls.length, 0);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('MAVEN_ALLOWED_HOSTS 可以追加多个主机', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    const response = await handleRequest(
+      new Request(
+        'https://maven.example.com/repo1.maven.org/maven2/com/example/foo/1.0/foo-1.0.pom',
+      ),
+      {
+        MAVEN_ALLOWED_HOSTS:
+          'maven.pkg.github.com, repo1.maven.org, maven.aliyun.com',
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      fetchMock.calls[0].input,
+      'https://repo1.maven.org/maven2/com/example/foo/1.0/foo-1.0.pom',
+    );
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('MAVEN_ALLOWED_HOSTS=* 允许任意合法域名', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    await handleRequest(
+      new Request(
+        'https://maven.example.com/repo1.maven.org/maven2/com/example/foo/1.0/foo-1.0.pom',
+      ),
+      { MAVEN_ALLOWED_HOSTS: '*' },
+    );
+
+    assert.equal(
+      fetchMock.calls[0].input,
+      'https://repo1.maven.org/maven2/com/example/foo/1.0/foo-1.0.pom',
+    );
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('非法上游主机返回 400', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    for (const path of [
+      '/127.0.0.1/foo',
+      '/maven.pkg.github.com:443/foo',
+      '/bad_host.example.com/foo',
+    ]) {
+      const response = await handleRequest(
+        new Request(`https://maven.example.com${path}`),
+        {},
+      );
+      assert.equal(response.status, 400, path);
+    }
+
+    assert.equal(fetchMock.calls.length, 0);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('host 级凭据必须成对设置', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    const response = await handleRequest(
+      new Request(`https://maven.example.com${MULTI_ARTIFACT_PATH}`),
+      { MAVEN_PKG_GITHUB_COM_PASSWORD: 'test-token' },
+    );
+
+    assert.equal(response.status, 500);
+    assert.match(await response.text(), /MAVEN_PKG_GITHUB_COM_USERNAME/);
+    assert.equal(fetchMock.calls.length, 0);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('主机名中的点和连字符会转换为环境变量下划线', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    await handleRequest(
+      new Request(
+        'https://maven.example.com/my-repo.example.com/repo/com/example/foo/1.0/foo-1.0.pom',
+      ),
+      {
+        MAVEN_ALLOWED_HOSTS: 'my-repo.example.com',
+        MY_REPO_EXAMPLE_COM_USERNAME: 'user',
+        MY_REPO_EXAMPLE_COM_PASSWORD: 'password',
+      },
+    );
+
+    assert.equal(
+      fetchMock.calls[0].input,
+      'https://my-repo.example.com/repo/com/example/foo/1.0/foo-1.0.pom',
+    );
+    assert.equal(
+      fetchMock.calls[0].init.headers.get('authorization'),
+      `Basic ${base64EncodeUtf8('user:password')}`,
+    );
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('上游主机大小写不敏感', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    await handleRequest(
+      new Request(
+        `https://maven.example.com/MAVEN.PKG.GITHUB.COM/alibaba/spring-cloud-alibaba${ARTIFACT_PATH}`,
+      ),
+      {
+        MAVEN_PKG_GITHUB_COM_USERNAME: 'user',
+        MAVEN_PKG_GITHUB_COM_PASSWORD: 'password',
+      },
+    );
+
+    assert.equal(
+      fetchMock.calls[0].input,
+      `https://maven.pkg.github.com/alibaba/spring-cloud-alibaba${ARTIFACT_PATH}`,
+    );
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('host 级凭据不会发送到其他主机', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    await handleRequest(
+      new Request(
+        'https://maven.example.com/repo1.maven.org/maven2/com/example/foo/1.0/foo-1.0.pom',
+      ),
+      {
+        MAVEN_ALLOWED_HOSTS: 'maven.pkg.github.com,repo1.maven.org',
+        MAVEN_PKG_GITHUB_COM_USERNAME: 'user',
+        MAVEN_PKG_GITHUB_COM_PASSWORD: 'password',
+      },
+    );
+
+    assert.equal(fetchMock.calls[0].init.headers.has('authorization'), false);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('健康检查报告多上游配置', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/-/health'),
+    {
+      MAVEN_ALLOWED_HOSTS: 'maven.pkg.github.com',
+      MAVEN_PKG_GITHUB_COM_USERNAME: 'user',
+      MAVEN_PKG_GITHUB_COM_PASSWORD: 'password',
+    },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.allowedHosts, ['maven.pkg.github.com']);
+  assert.equal(body.hosts[0].envPrefix, 'MAVEN_PKG_GITHUB_COM');
+  assert.equal(body.hosts[0].authentication, 'basic');
+  assert.equal(body.legacy.authentication, 'anonymous');
+});
+
+test('根路径返回多上游用法', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/'),
+    {},
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    body.usage,
+    '/<upstream-host>/<upstream-path>/<maven-path>',
+  );
+  assert.match(body.example, /maven\.pkg\.github\.com/);
+  assert.deepEqual(body.allowedHosts, ['maven.pkg.github.com']);
+});
+
+test('非法的 MAVEN_ALLOWED_HOSTS 返回 500', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    const response = await handleRequest(
+      new Request(`https://maven.example.com${MULTI_ARTIFACT_PATH}`),
+      { MAVEN_ALLOWED_HOSTS: 'not a host' },
+    );
+
+    assert.equal(response.status, 500);
+    assert.match(await response.text(), /MAVEN_ALLOWED_HOSTS/);
+    assert.equal(fetchMock.calls.length, 0);
   } finally {
     fetchMock.restore();
   }

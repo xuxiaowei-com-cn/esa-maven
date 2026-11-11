@@ -77,7 +77,12 @@ const server = createServer(async (req, res) => {
 server.listen(port, '127.0.0.1', () => {
   console.log(`esa-maven 本地代理已启动：http://127.0.0.1:${port}`);
   console.log(
-    `上游：${process.env.MAVEN_SNAPSHOT_URL || 'https://maven.pkg.github.com/alibaba/spring-cloud-alibaba'}`,
+    `允许的上游：${process.env.MAVEN_ALLOWED_HOSTS || 'maven.pkg.github.com'}`,
   );
-  console.log(`认证：${process.env.MAVEN_REPO_PASSWORD ? '已配置' : '未配置（匿名）'}`);
+  console.log(
+    `旧版上游：${process.env.MAVEN_SNAPSHOT_URL || 'https://maven.pkg.github.com/alibaba/spring-cloud-alibaba'}`,
+  );
+  console.log(
+    `GitHub 认证：${process.env.MAVEN_PKG_GITHUB_COM_PASSWORD ? '已配置' : '未配置（匿名）'}`,
+  );
 });

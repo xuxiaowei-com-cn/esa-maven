@@ -5,7 +5,7 @@ import { base64EncodeUtf8 } from '../src/base64.js';
 import { handleRequest } from '../src/maven-proxy.js';
 
 const ARTIFACT_PATH =
-  '/com/alibaba/cloud/spring-cloud-alibaba-dependencies/2023.0.3.2-SNAPSHOT/spring-cloud-alibaba-dependencies-2023.0.3.2-SNAPSHOT.pom';
+  '/com/alibaba/cloud/spring-cloud-alibaba-dependencies/2026.0.0.0-SNAPSHOT/maven-metadata.xml';
 const MULTI_PREFIX = '/maven.pkg.github.com/alibaba/spring-cloud-alibaba';
 const MULTI_ARTIFACT_PATH = `${MULTI_PREFIX}${ARTIFACT_PATH}`;
 const MULTI_UPSTREAM =

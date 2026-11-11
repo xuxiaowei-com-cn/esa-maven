@@ -12,14 +12,18 @@
 
 ```text
 Maven 客户端
-    │  GET /maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/...
+    │  GET /maven.pkg.github.com/alibaba/spring-cloud-alibaba
+    │      /com/alibaba/cloud/spring-cloud-alibaba-dependencies
+    │      /2026.0.0.0-SNAPSHOT/maven-metadata.xml
     ▼
 ESA 边缘节点（本 Worker）
     │  1. 第一段路径 maven.pkg.github.com 作为上游主机
     │  2. 读取 MAVEN_PKG_GITHUB_COM_USERNAME / _PASSWORD
     │  3. 拼装上游 URL 并注入 Basic 认证
     ▼
-https://maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/...
+https://maven.pkg.github.com/alibaba/spring-cloud-alibaba
+    /com/alibaba/cloud/spring-cloud-alibaba-dependencies
+    /2026.0.0.0-SNAPSHOT/maven-metadata.xml
 ```
 
 Worker 对每个请求只做一次上游 `fetch`；如果上游返回 3xx，运行时会自动跟随（每次重定向也算一次子请求）。
@@ -42,7 +46,7 @@ https://<upstream-host>/<upstream-path>/<maven-path>
 
 | 请求地址 | 实际代理到 |
 | --- | --- |
-| `https://maven.example.com/maven.pkg.github.com/alibaba/spring-cloud-alibaba/...` | `https://maven.pkg.github.com/alibaba/spring-cloud-alibaba/...` |
+| `https://maven.example.com/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/spring-cloud-alibaba-dependencies/2026.0.0.0-SNAPSHOT/maven-metadata.xml` | `https://maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/spring-cloud-alibaba-dependencies/2026.0.0.0-SNAPSHOT/maven-metadata.xml` |
 | `https://maven.example.com/repo1.maven.org/maven2/...` | `https://repo1.maven.org/maven2/...` |
 | `https://maven.example.com/maven.aliyun.com/repository/public/...` | `https://maven.aliyun.com/repository/public/...` |
 
@@ -258,7 +262,7 @@ curl https://maven.example.com/-/health
 </pluginRepositories>
 ```
 
-使用示例（版本号替换为实际快照版本）：
+BOM 导入示例（`spring-cloud-alibaba.version` 设为 `2026.0.0.0-SNAPSHOT`）：
 
 ```xml
 <dependencyManagement>
@@ -274,11 +278,21 @@ curl https://maven.example.com/-/health
 </dependencyManagement>
 ```
 
+### 验证快照元数据
+
+访问该依赖版本的 `maven-metadata.xml`：
+
+```bash
+curl https://maven.example.com/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/spring-cloud-alibaba-dependencies/2026.0.0.0-SNAPSHOT/maven-metadata.xml
+```
+
+返回内容包含 `<snapshotVersions>`，Maven 会根据它定位实际的时间戳文件。
+
 说明：
 
 - **不需要**在 `~/.m2/settings.xml` 中为这个仓库配置 `<server>`；密码由 Worker 在边缘注入。
 - 快照元数据有更新时使用 `mvn -U` 强制刷新。
-- 直接访问 `...-SNAPSHOT.pom` 返回 `404` 是正常的：GitHub Packages 的快照文件带时间戳，Maven 会先读 `maven-metadata.xml` 再下载时间戳文件。
+- 验证快照时请访问上面的 `maven-metadata.xml`；GitHub Packages 的实际快照文件带时间戳，Maven 会从元数据中解析实际文件名。
 - 本 Worker 只代理下载（`GET` / `HEAD`），不支持 `PUT` 部署制品。
 
 ### 同时使用多个上游
@@ -319,7 +333,7 @@ export MAVEN_PKG_GITHUB_COM_PASSWORD
 npm run dev:local
 # 另开终端：
 curl http://127.0.0.1:8787/-/health
-curl -I http://127.0.0.1:8787/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/...
+curl -I http://127.0.0.1:8787/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/spring-cloud-alibaba-dependencies/2026.0.0.0-SNAPSHOT/maven-metadata.xml
 ```
 
 也可以通过 ESA CLI 启动官方本地调试服务：
@@ -358,7 +372,7 @@ npm run dev
 | `403` | 上游主机不在 `MAVEN_ALLOWED_HOSTS` 中 |
 | `400` | 第一段不是合法域名，或包含 IP、端口、下划线、IPv6 |
 | `401`，响应头 `x-esa-maven-upstream-status: 401` | 该主机的 `_USERNAME` / `_PASSWORD` 错误、过期或缺少 `read:packages` |
-| `404` | 上游路径不存在；快照文件带时间戳，直接访问 `-SNAPSHOT.pom` 本来就会 404 |
+| `404` | 上游路径不存在；先用 `.../2026.0.0.0-SNAPSHOT/maven-metadata.xml` 验证路径，快照文件以元数据为准 |
 | `500` 且提示缺少 `_USERNAME` / `_PASSWORD` | 该主机的用户名和密码必须成对设置 |
 | `500` 且提示 `MAVEN_ALLOWED_HOSTS` | 允许列表中有非法域名 |
 | `502` | Worker 无法访问上游；检查域名、DNS 和 ESA 出网情况 |

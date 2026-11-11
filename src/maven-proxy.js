@@ -71,7 +71,8 @@ export async function handleRequest(request, env = {}) {
       description: '阿里云 ESA Workers Maven 仓库代理（多上游、只代理不存储）',
       usage: PATH_FORMAT,
       example:
-        '/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/...',
+        '/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/'
+        + 'spring-cloud-alibaba-dependencies/2026.0.0.0-SNAPSHOT/maven-metadata.xml',
       allowedHosts: runtime.allowedHosts,
       hosts: runtime.hosts,
       endpoints: [

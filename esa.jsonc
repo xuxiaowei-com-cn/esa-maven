@@ -2,6 +2,8 @@
   "name": "esa-maven",
   "description": "阿里云 ESA Workers Maven 快照仓库代理（只代理，不存储）",
   "entry": "./src/index.js",
+  "installCommand": "npm install --omit=dev",
+  "buildCommand": "npm run build",
   "dev": {
     "port": 18080
   }

@@ -156,6 +156,35 @@ curl https://maven.example.com/-/health
 
 `authentication` 只会显示 `basic` 或 `anonymous`，不会返回密码。
 
+## 通过控制台导入 GitHub 仓库
+
+如果不想在本地安装 CLI，可以在 ESA 控制台「函数和 Pages」→「创建」→「导入 Github 仓库」中填写：
+
+| 字段 | 填写值 | 说明 |
+| --- | --- | --- |
+| 项目名称 | `esa-maven` | 与 `esa.jsonc` 的 `name` 一致 |
+| 生产分支 | `main` | 推送到 main 后自动构建部署 |
+| 非生产分支构建 | 关闭 | 按需开启 |
+| 安装命令 | `npm install --omit=dev` | `esa.jsonc` 已覆盖；跳过仅用于本地开发的 `esa-cli` |
+| 构建命令 | `npm run build` | 校验入口文件语法 |
+| 根目录 | `/` | 构建命令在仓库根目录执行 |
+| 静态资源目录 | 留空 | 纯函数项目，没有静态资源 |
+| 函数文件路径 | `./src/index.js` | `esa.jsonc` 的 `entry` 已指定 |
+| Node.js 版本 | `20` | `package.json` 的 `engines.node` 为 `>=20` |
+| 环境变量 | 留空 | 按官方文档，这里是**构建期**变量；运行时配置请用函数变量 |
+
+> `esa.jsonc` 的优先级高于控制台构建信息。项目里已有 `esa.jsonc` 时，`entry`、`installCommand`、`buildCommand` 等字段以文件为准。
+
+创建完成后，在函数详情 → **基本信息** → **函数变量** 中配置运行时变量：
+
+| 键 | 值 | 加密存储 |
+| --- | --- | --- |
+| `MAVEN_SNAPSHOT_URL` | `https://maven.pkg.github.com/alibaba/spring-cloud-alibaba` | 否 |
+| `MAVEN_REPO_USERNAME` | GitHub 用户名 | 否 |
+| `MAVEN_REPO_PASSWORD` | 带 `read:packages` 权限的 PAT | **是** |
+
+配置后需要生成新版本并重新部署，变量才会对线上生效。绑定域名和 Maven 客户端配置与上一节相同。
+
 ## Maven 客户端配置
 
 在项目的 `pom.xml` 中添加快照仓库：

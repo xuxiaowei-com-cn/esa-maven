@@ -5,6 +5,7 @@
   "type": "module",
   "description": "阿里云 ESA Workers Maven 快照仓库代理（只代理，不存储）",
   "scripts": {
+    "build": "node --check src/index.js && node --check src/maven-proxy.js && node --check src/config.js && node --check src/base64.js",
     "dev": "esa-cli dev",
     "dev:local": "node scripts/dev-server.mjs",
     "commit": "esa-cli commit",

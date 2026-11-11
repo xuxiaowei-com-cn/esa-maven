@@ -13,6 +13,7 @@
     "type": "git",
     "url": "git+https://github.com/xuxiaowei-com-cn/esa-maven.git"
   },
+  "license": "Apache-2.0",
   "scripts": {
     "build": "node --check src/index.js && node --check src/maven-proxy.js && node --check src/config.js && node --check src/base64.js",
     "dev": "esa-cli dev",

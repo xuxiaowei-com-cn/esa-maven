@@ -207,13 +207,17 @@ curl https://maven.example.com/-/health
 
 ### favicon
 
-Worker 对 `GET /favicon.ico` 返回仓库根目录的 `favicon.ico`。替换图标后运行：
+`/favicon.ico` 由 ESA Pages 静态资源直接返回，文件位于 `public/favicon.ico`。[esa.jsonc](esa.jsonc) 已配置：
 
-```bash
-npm run favicon
+```jsonc
+"assets": {
+  "directory": "./public"
+}
 ```
 
-会重新生成 `src/favicon.js`，然后重新部署即可。
+替换图标只需替换 `public/favicon.ico`，然后重新部署即可。
+
+> `esa-cli dev` 会固定拦截 `/favicon.ico` 并返回 `204`，这是 CLI 本地调试行为；线上由 Pages 静态资源返回。
 
 ## 通过控制台导入 GitHub 仓库
 
@@ -227,7 +231,7 @@ npm run favicon
 | 安装命令 | `npm install --omit=dev` | `esa.jsonc` 已覆盖；跳过仅用于本地开发的 `esa-cli` |
 | 构建命令 | `npm run build` | 校验入口文件语法 |
 | 根目录 | `/` | 构建命令在仓库根目录执行 |
-| 静态资源目录 | 留空 | 纯函数项目，没有静态资源 |
+| 静态资源目录 | `./public` | 只放 favicon 等静态文件；由 `esa.jsonc` 的 `assets.directory` 管理 |
 | 函数文件路径 | `./src/index.js` | `esa.jsonc` 的 `entry` 已指定 |
 | Node.js 版本 | `20` | `package.json` 的 `engines.node` 为 `>=20` |
 | 环境变量 | 留空 | 按官方文档，这里是**构建期**变量；运行时配置请用函数变量 |

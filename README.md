@@ -193,7 +193,8 @@ curl https://maven.example.com/-/health
   "hosts": [
     {
       "host": "maven.pkg.github.com",
-      "envPrefix": "MAVEN_PKG_GITHUB_COM",
+      "usernameEnv": "MAVEN_PKG_GITHUB_COM_USERNAME",
+      "passwordEnv": "MAVEN_PKG_GITHUB_COM_PASSWORD",
       "authentication": "basic"
     }
   ]

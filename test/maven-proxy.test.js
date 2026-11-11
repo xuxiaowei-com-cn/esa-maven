@@ -431,7 +431,9 @@ test('健康检查报告多上游配置且不泄露密码', async () => {
   assert.deepEqual(body.author, packageJson.author);
   assert.deepEqual(body.repository, packageJson.repository);
   assert.match(text, /"allowedHosts": \[/);
-  assert.match(text, /"envPrefix": "MAVEN_PKG_GITHUB_COM"/);
+  assert.equal(body.hosts[0].usernameEnv, 'MAVEN_PKG_GITHUB_COM_USERNAME');
+  assert.equal(body.hosts[0].passwordEnv, 'MAVEN_PKG_GITHUB_COM_PASSWORD');
+  assert.doesNotMatch(text, /"envPrefix"/);
   assert.match(text, /"authentication": "basic"/);
   assert.doesNotMatch(text, /test-token/);
   assert.doesNotMatch(text, /"legacy"/);

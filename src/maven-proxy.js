@@ -243,7 +243,8 @@ function describeRuntime(env) {
         const config = resolveHostConfig(host, env);
         return {
           host,
-          envPrefix: config.envPrefix,
+          usernameEnv: `${config.envPrefix}_USERNAME`,
+          passwordEnv: `${config.envPrefix}_PASSWORD`,
           authentication: config.authEnabled ? 'basic' : 'anonymous',
         };
       } catch (error) {

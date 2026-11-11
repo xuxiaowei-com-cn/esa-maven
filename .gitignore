@@ -33,3 +33,18 @@ build/
 .vscode/
 
 .DS_Store
+
+### Node / ESA CLI ###
+node_modules/
+.dev/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.*
+!.env.example
+
+/yarn.lock
+/pnpm-lock.yaml
+/package-lock.json

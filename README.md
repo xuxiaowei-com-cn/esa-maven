@@ -26,8 +26,6 @@ Worker 对每个请求只做一次上游 `fetch`；如果上游返回 3xx，运�
 
 ## 访问方式
 
-### 多仓库模式（推荐）
-
 格式：
 
 ```text
@@ -48,18 +46,7 @@ https://<upstream-host>/<upstream-path>/<maven-path>
 | `https://maven.example.com/repo1.maven.org/maven2/...` | `https://repo1.maven.org/maven2/...` |
 | `https://maven.example.com/maven.aliyun.com/repository/public/...` | `https://maven.aliyun.com/repository/public/...` |
 
-第一段必须是合法域名，且要在 `MAVEN_ALLOWED_HOSTS` 中；否则返回 `400` / `403`。
-
-### 兼容旧版单仓库模式
-
-不以域名开头的路径仍然按旧版处理：
-
-```text
-GET /com/alibaba/cloud/...
--> MAVEN_SNAPSHOT_URL + /com/alibaba/cloud/...
-```
-
-旧版使用 `MAVEN_SNAPSHOT_URL`、`MAVEN_REPO_USERNAME`、`MAVEN_REPO_PASSWORD`；新版路径模式**不会**读取这三个变量。
+第一段必须是合法域名，且要在 `MAVEN_ALLOWED_HOSTS` 中；否则返回 `400` / `403`。不以域名开头的路径（例如 `/com/alibaba/...`）会返回 `400`，旧版单仓库模式已删除。
 
 ## 配置项
 
@@ -94,16 +81,6 @@ GET /com/alibaba/cloud/...
 - 凭据按主机隔离：`MAVEN_PKG_GITHUB_COM_*` 只会发送给 `maven.pkg.github.com`，不会发给其他主机。
 - Worker **不会转发客户端自带的 `Authorization`**。
 - 修改函数变量或 Secret 后需要重新部署版本。
-
-### 兼容旧版配置
-
-| 变量 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `MAVEN_SNAPSHOT_URL` | 否 | `https://maven.pkg.github.com/alibaba/spring-cloud-alibaba` | 旧版单仓库上游地址 |
-| `MAVEN_REPO_USERNAME` | 与密码成对 | 空 | 旧版上游用户名 |
-| `MAVEN_REPO_PASSWORD` | 与用户名成对 | 空 | 旧版上游密码 / Token |
-
-如果只使用路径模式，可以删除这三个旧变量。
 
 ## 部署到 ESA Workers
 
@@ -206,11 +183,7 @@ curl https://maven.example.com/-/health
       "envPrefix": "MAVEN_PKG_GITHUB_COM",
       "authentication": "basic"
     }
-  ],
-  "legacy": {
-    "upstream": "https://maven.pkg.github.com/alibaba/spring-cloud-alibaba",
-    "authentication": "anonymous"
-  }
+  ]
 }
 ```
 

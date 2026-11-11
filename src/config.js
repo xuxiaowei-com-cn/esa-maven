@@ -1,6 +1,3 @@
-export const DEFAULT_SNAPSHOT_URL =
-  'https://maven.pkg.github.com/alibaba/spring-cloud-alibaba';
-
 export const DEFAULT_ALLOWED_HOSTS = ['maven.pkg.github.com'];
 
 export const DEFAULT_USER_AGENT = 'esa-maven-proxy/1.0';
@@ -90,14 +87,6 @@ export function parseUpstreamRoute(pathname) {
 }
 
 /**
- * 第一段是否“看起来像上游主机”。
- * Maven groupId 的第一段通常是 com、org、io，不含点，因此不会被误判。
- */
-export function looksLikeUpstreamHost(segment) {
-  return /[.:@]/.test(segment);
-}
-
-/**
  * 允许代理的上游主机列表。
  *
  * - 未设置 MAVEN_ALLOWED_HOSTS：只允许默认的 maven.pkg.github.com
@@ -163,59 +152,6 @@ export function resolveHostConfig(host, env = {}) {
   return {
     host: normalized,
     envPrefix,
-    username,
-    password,
-    authEnabled: Boolean(username && password),
-  };
-}
-
-/**
- * 兼容旧版的单仓库模式。
- *
- * 根路径下不以“主机名”开头的请求仍然使用 MAVEN_SNAPSHOT_URL +
- * MAVEN_REPO_USERNAME / MAVEN_REPO_PASSWORD。
- */
-export function resolveConfig(env = {}) {
-  const snapshotUrl =
-    readEnv(env, 'MAVEN_SNAPSHOT_URL').trim() || DEFAULT_SNAPSHOT_URL;
-  const username = readEnv(env, 'MAVEN_REPO_USERNAME').trim();
-  const password = readEnv(env, 'MAVEN_REPO_PASSWORD');
-
-  let parsed;
-  try {
-    parsed = new URL(snapshotUrl);
-  } catch {
-    throw new ConfigError(`MAVEN_SNAPSHOT_URL 不是合法的 URL：${snapshotUrl}`);
-  }
-
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new ConfigError('MAVEN_SNAPSHOT_URL 只支持 http/https 协议');
-  }
-
-  if (parsed.username || parsed.password) {
-    throw new ConfigError(
-      '不要在 MAVEN_SNAPSHOT_URL 中写用户名或密码，请使用 MAVEN_REPO_USERNAME / MAVEN_REPO_PASSWORD',
-    );
-  }
-
-  if (parsed.search || parsed.hash) {
-    throw new ConfigError('MAVEN_SNAPSHOT_URL 不能包含查询参数或锚点');
-  }
-
-  let upstream = parsed.toString();
-  if (upstream.endsWith('/')) {
-    upstream = upstream.slice(0, -1);
-  }
-
-  if (password && !username) {
-    throw new ConfigError('已设置 MAVEN_REPO_PASSWORD，但缺少 MAVEN_REPO_USERNAME');
-  }
-  if (username && !password) {
-    throw new ConfigError('已设置 MAVEN_REPO_USERNAME，但缺少 MAVEN_REPO_PASSWORD');
-  }
-
-  return {
-    upstream,
     username,
     password,
     authEnabled: Boolean(username && password),

@@ -2,16 +2,15 @@ import {
   ConfigError,
   DEFAULT_USER_AGENT,
   isSupportedHostname,
-  looksLikeUpstreamHost,
   normalizeHostname,
   parseUpstreamRoute,
   resolveAllowedHosts,
-  resolveConfig,
   resolveHostConfig,
 } from './config.js';
 import { base64EncodeUtf8 } from './base64.js';
 
 const HEALTH_PATH = '/-/health';
+const PATH_FORMAT = '/<upstream-host>/<upstream-path>/<maven-path>';
 
 // 只转发 Maven 解析/下载需要的请求头，避免把客户端凭据带到上游。
 const FORWARD_REQUEST_HEADERS = [
@@ -46,13 +45,9 @@ const FORWARD_RESPONSE_HEADERS = [
 /**
  * ESA Worker 入口的实际处理函数。
  *
- * 两种访问方式：
- *   1. 路径模式（多仓库）：
- *      /maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/...
- *      -> https://maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/...
- *   2. 兼容旧版的单仓库模式：
- *      /com/...
- *      -> MAVEN_SNAPSHOT_URL + /com/...
+ * 路径格式：
+ *   /maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/...
+ *   -> https://maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/...
  *
  * 不读写 KV、不调用 Cache API、不保存任何响应内容。
  */
@@ -74,16 +69,14 @@ export async function handleRequest(request, env = {}) {
     return jsonResponse(request, 200, {
       name: 'esa-maven',
       description: '阿里云 ESA Workers Maven 仓库代理（多上游、只代理不存储）',
-      usage: '/<upstream-host>/<upstream-path>/<maven-path>',
+      usage: PATH_FORMAT,
       example:
         '/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/...',
       allowedHosts: runtime.allowedHosts,
       hosts: runtime.hosts,
-      legacy: runtime.legacy,
       endpoints: [
         'GET /<upstream-host>/<upstream-path>/<maven-path>',
         'HEAD /<upstream-host>/<upstream-path>/<maven-path>',
-        'GET /<maven-path>  (兼容旧版单仓库模式)',
         'GET /-/health',
       ],
     });
@@ -94,20 +87,20 @@ export async function handleRequest(request, env = {}) {
   }
 
   const route = parseUpstreamRoute(url.pathname);
-  if (route && looksLikeUpstreamHost(route.segment)) {
-    return handleMultiUpstream(request, url, route, env);
+  if (!route) {
+    return textResponse(400, `路径格式错误，应为 ${PATH_FORMAT}`);
   }
 
-  return handleLegacyUpstream(request, url, env);
+  return handleUpstream(request, url, route, env);
 }
 
-function handleMultiUpstream(request, url, route, env) {
+function handleUpstream(request, url, route, env) {
   const host = normalizeHostname(route.host);
 
   if (!isSupportedHostname(host)) {
     return textResponse(
       400,
-      `无法识别的上游主机：${route.segment}。路径格式：/<upstream-host>/<upstream-path>/<maven-path>`,
+      `无法识别的上游主机：${route.segment}。路径格式：${PATH_FORMAT}`,
     );
   }
 
@@ -134,17 +127,6 @@ function handleMultiUpstream(request, url, route, env) {
 
   const target = buildPathUpstreamUrl(host, route.rest, url.search);
   return proxyRequest(request, target, config);
-}
-
-function handleLegacyUpstream(request, url, env) {
-  let config;
-  try {
-    config = resolveConfig(env);
-  } catch (error) {
-    return configErrorResponse(error);
-  }
-
-  return proxyRequest(request, buildUpstreamUrl(config.upstream, url), config);
 }
 
 async function proxyRequest(request, target, config) {
@@ -175,11 +157,6 @@ function configErrorResponse(error) {
 
 export function buildPathUpstreamUrl(host, rest, search = '') {
   return `https://${host}/${rest}${search}`;
-}
-
-export function buildUpstreamUrl(upstream, url) {
-  const path = url.pathname.startsWith('/') ? url.pathname : `/${url.pathname}`;
-  return `${upstream}${path}${url.search}`;
 }
 
 export function buildUpstreamHeaders(request, config) {
@@ -268,19 +245,6 @@ function describeRuntime(env) {
 
   if (runtime.allowedHosts.includes('*')) {
     runtime.note = 'MAVEN_ALLOWED_HOSTS=* 允许任意合法域名，请谨慎使用';
-  }
-
-  try {
-    const legacy = resolveConfig(env);
-    runtime.legacy = {
-      upstream: legacy.upstream,
-      authentication: legacy.authEnabled ? 'basic' : 'anonymous',
-    };
-  } catch (error) {
-    runtime.legacy = {
-      authentication: 'misconfigured',
-      error: errorMessage(error),
-    };
   }
 
   return runtime;

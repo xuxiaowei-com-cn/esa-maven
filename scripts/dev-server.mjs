@@ -3,7 +3,9 @@
 // handleRequest 处理，方便用真实 GitHub Token 验证代理逻辑。
 //
 // 用法：
-//   MAVEN_REPO_USERNAME=xxx MAVEN_REPO_PASSWORD=<github-token> npm run dev:local
+//   MAVEN_ALLOWED_HOSTS=maven.pkg.github.com \
+//   MAVEN_PKG_GITHUB_COM_USERNAME=xxx \
+//   MAVEN_PKG_GITHUB_COM_PASSWORD=<github-token> npm run dev:local
 //
 // 注意：ESA CLI 的 `esa-cli dev` 不会注入控制台上的函数变量，因此本地
 // 调试凭据时请使用这个脚本，或直接在 ESA 控制台的调试环境中测试。
@@ -78,9 +80,6 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`esa-maven 本地代理已启动：http://127.0.0.1:${port}`);
   console.log(
     `允许的上游：${process.env.MAVEN_ALLOWED_HOSTS || 'maven.pkg.github.com'}`,
-  );
-  console.log(
-    `旧版上游：${process.env.MAVEN_SNAPSHOT_URL || 'https://maven.pkg.github.com/alibaba/spring-cloud-alibaba'}`,
   );
   console.log(
     `GitHub 认证：${process.env.MAVEN_PKG_GITHUB_COM_PASSWORD ? '已配置' : '未配置（匿名）'}`,

@@ -12,6 +12,9 @@ import { base64EncodeUtf8 } from './base64.js';
 
 const HEALTH_PATH = '/-/health';
 const PATH_FORMAT = '/<upstream-host>/<upstream-path>/<maven-path>';
+const PROJECT_NAME = packageJson.name ?? '';
+const PROJECT_VERSION = packageJson.version ?? '';
+const PROJECT_DESCRIPTION = packageJson.description ?? '';
 const AUTHOR = packageJson.author ?? '';
 const REPOSITORY = packageJson.repository ?? '';
 
@@ -70,8 +73,9 @@ export async function handleRequest(request, env = {}) {
     }
     const runtime = describeRuntime(env);
     return jsonResponse(request, 200, {
-      name: 'esa-maven',
-      description: '阿里云 ESA Workers Maven 仓库代理（多上游、只代理不存储）',
+      name: PROJECT_NAME,
+      version: PROJECT_VERSION,
+      description: PROJECT_DESCRIPTION,
       author: AUTHOR,
       repository: REPOSITORY,
       usage: PATH_FORMAT,

@@ -445,6 +445,9 @@ test('根路径返回多上游用法', async () => {
   const body = await response.json();
 
   assert.equal(response.status, 200);
+  assert.equal(body.name, packageJson.name);
+  assert.equal(body.version, packageJson.version);
+  assert.equal(body.description, packageJson.description);
   assert.deepEqual(body.author, packageJson.author);
   assert.deepEqual(body.repository, packageJson.repository);
   assert.equal(body.usage, '/<upstream-host>/<upstream-path>/<maven-path>');

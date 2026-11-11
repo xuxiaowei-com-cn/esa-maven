@@ -202,7 +202,7 @@ curl https://maven.example.com/-/health
 
 `authentication` 只会显示 `basic` / `anonymous` / `misconfigured`，不会返回密码。
 
-根路径 `/` 和 `/-/health` 都会返回 `author`、`repository`；两者直接读取 `package.json` 的 `author`、`repository` 字段，不做额外处理。根路径还会返回 `allowedHosts` 和使用示例。
+根路径 `/` 会返回 `name`、`version`、`description`、`author`、`repository`，均读取 `package.json`；`/-/health` 也会返回 `author`、`repository`。`repository` 直接返回 `package.json` 中的值，不做额外处理。
 
 ## 通过控制台导入 GitHub 仓库
 

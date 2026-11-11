@@ -458,6 +458,30 @@ test('根路径返回多上游用法', async () => {
   assert.equal(body.legacy, undefined);
 });
 
+test('GET /favicon.ico 返回图标', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/favicon.ico'),
+    {},
+  );
+  const bytes = new Uint8Array(await response.arrayBuffer());
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/x-icon');
+  assert.ok(bytes.length > 100);
+  assert.deepEqual([...bytes.slice(0, 4)], [0, 0, 1, 0]);
+});
+
+test('HEAD /favicon.ico 返回响应头但没有响应体', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/favicon.ico', { method: 'HEAD' }),
+    {},
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/x-icon');
+  assert.equal(response.body, null);
+});
+
 test('路径中的 .. 不能绕过主机白名单', async () => {
   const fetchMock = mockFetch(() => upstreamOk());
   try {

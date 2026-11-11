@@ -9,9 +9,14 @@ import {
 } from './config.js';
 import packageJson from '../package.json' with { type: 'json' };
 import { base64EncodeUtf8 } from './base64.js';
+import { FAVICON_ICO_BASE64 } from './favicon.js';
 
 const HEALTH_PATH = '/-/health';
+const FAVICON_PATH = '/favicon.ico';
 const PATH_FORMAT = '/<upstream-host>/<upstream-path>/<maven-path>';
+const FAVICON_BYTES = Uint8Array.from(atob(FAVICON_ICO_BASE64), (char) =>
+  char.charCodeAt(0),
+);
 const PROJECT_NAME = packageJson.name ?? '';
 const PROJECT_VERSION = packageJson.version ?? '';
 const PROJECT_DESCRIPTION = packageJson.description ?? '';
@@ -60,6 +65,13 @@ const FORWARD_RESPONSE_HEADERS = [
 export async function handleRequest(request, env = {}) {
   const url = new URL(request.url);
 
+  if (url.pathname === FAVICON_PATH) {
+    if (!isReadMethod(request.method)) {
+      return methodNotAllowed();
+    }
+    return faviconResponse(request.method);
+  }
+
   if (url.pathname === HEALTH_PATH) {
     if (!isReadMethod(request.method)) {
       return methodNotAllowed();
@@ -88,6 +100,7 @@ export async function handleRequest(request, env = {}) {
         'GET /<upstream-host>/<upstream-path>/<maven-path>',
         'HEAD /<upstream-host>/<upstream-path>/<maven-path>',
         'GET /-/health',
+        'GET /favicon.ico',
       ],
     });
   }
@@ -286,6 +299,15 @@ function jsonResponse(request, status, data) {
     headers: {
       'cache-control': 'no-store',
       'content-type': 'application/json; charset=utf-8',
+    },
+  });
+}
+
+function faviconResponse(method) {
+  return new Response(method === 'HEAD' ? null : FAVICON_BYTES, {
+    headers: {
+      'cache-control': 'public, max-age=86400',
+      'content-type': 'image/x-icon',
     },
   });
 }

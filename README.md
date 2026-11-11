@@ -205,6 +205,16 @@ curl https://maven.example.com/-/health
 
 根路径 `/` 会返回 `name`、`version`、`description`、`author`、`repository`，均读取 `package.json`；`/-/health` 也会返回 `author`、`repository`。`repository` 直接返回 `package.json` 中的值，不做额外处理。
 
+### favicon
+
+Worker 对 `GET /favicon.ico` 返回仓库根目录的 `favicon.ico`。替换图标后运行：
+
+```bash
+npm run favicon
+```
+
+会重新生成 `src/favicon.js`，然后重新部署即可。
+
 ## 通过控制台导入 GitHub 仓库
 
 如果不想在本地安装 CLI，可以在 ESA 控制台「函数和 Pages」→「创建」→「导入 Github 仓库」中填写：

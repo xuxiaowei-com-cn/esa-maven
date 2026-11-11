@@ -7,10 +7,13 @@ import {
   resolveAllowedHosts,
   resolveHostConfig,
 } from './config.js';
+import packageJson from '../package.json' with { type: 'json' };
 import { base64EncodeUtf8 } from './base64.js';
 
 const HEALTH_PATH = '/-/health';
 const PATH_FORMAT = '/<upstream-host>/<upstream-path>/<maven-path>';
+const AUTHOR = packageJson.author ?? '';
+const REPOSITORY = packageJson.repository ?? '';
 
 // 只转发 Maven 解析/下载需要的请求头，避免把客户端凭据带到上游。
 const FORWARD_REQUEST_HEADERS = [
@@ -69,6 +72,8 @@ export async function handleRequest(request, env = {}) {
     return jsonResponse(request, 200, {
       name: 'esa-maven',
       description: '阿里云 ESA Workers Maven 仓库代理（多上游、只代理不存储）',
+      author: AUTHOR,
+      repository: REPOSITORY,
       usage: PATH_FORMAT,
       example:
         '/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/'
@@ -214,6 +219,8 @@ function describeRuntime(env) {
   const runtime = {
     status: 'ok',
     multiUpstream: true,
+    author: AUTHOR,
+    repository: REPOSITORY,
     allowedHosts: [],
     hosts: [],
   };

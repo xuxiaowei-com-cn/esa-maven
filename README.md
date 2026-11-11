@@ -180,6 +180,15 @@ curl https://maven.example.com/-/health
 {
   "status": "ok",
   "multiUpstream": true,
+  "author": {
+    "name": "徐晓伟",
+    "email": "xuxiaowei@xuxiaowei.com.cn",
+    "url": "https://www.xuxiaowei.com.cn"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xuxiaowei-com-cn/esa-maven.git"
+  },
   "allowedHosts": ["maven.pkg.github.com", "repo1.maven.org"],
   "hosts": [
     {
@@ -192,6 +201,8 @@ curl https://maven.example.com/-/health
 ```
 
 `authentication` 只会显示 `basic` / `anonymous` / `misconfigured`，不会返回密码。
+
+根路径 `/` 和 `/-/health` 都会返回 `author`、`repository`；两者直接读取 `package.json` 的 `author`、`repository` 字段，不做额外处理。根路径还会返回 `allowedHosts` 和使用示例。
 
 ## 通过控制台导入 GitHub 仓库
 

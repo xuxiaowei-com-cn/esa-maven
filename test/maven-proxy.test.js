@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import packageJson from '../package.json' with { type: 'json' };
 import { base64EncodeUtf8 } from '../src/base64.js';
 import { handleRequest } from '../src/maven-proxy.js';
 
@@ -423,14 +424,17 @@ test('健康检查报告多上游配置且不泄露密码', async () => {
       ...HOST_CREDENTIALS,
     },
   );
-  const body = await response.text();
+  const text = await response.text();
+  const body = JSON.parse(text);
 
   assert.equal(response.status, 200);
-  assert.match(body, /"allowedHosts": \[/);
-  assert.match(body, /"envPrefix": "MAVEN_PKG_GITHUB_COM"/);
-  assert.match(body, /"authentication": "basic"/);
-  assert.doesNotMatch(body, /test-token/);
-  assert.doesNotMatch(body, /"legacy"/);
+  assert.deepEqual(body.author, packageJson.author);
+  assert.deepEqual(body.repository, packageJson.repository);
+  assert.match(text, /"allowedHosts": \[/);
+  assert.match(text, /"envPrefix": "MAVEN_PKG_GITHUB_COM"/);
+  assert.match(text, /"authentication": "basic"/);
+  assert.doesNotMatch(text, /test-token/);
+  assert.doesNotMatch(text, /"legacy"/);
 });
 
 test('根路径返回多上游用法', async () => {
@@ -441,6 +445,8 @@ test('根路径返回多上游用法', async () => {
   const body = await response.json();
 
   assert.equal(response.status, 200);
+  assert.deepEqual(body.author, packageJson.author);
+  assert.deepEqual(body.repository, packageJson.repository);
   assert.equal(body.usage, '/<upstream-host>/<upstream-path>/<maven-path>');
   assert.match(body.example, /maven\.pkg\.github\.com/);
   assert.deepEqual(body.allowedHosts, ['maven.pkg.github.com']);

@@ -628,23 +628,106 @@ test('健康检查报告多上游配置且不泄露密码', async () => {
   assert.doesNotMatch(text, /"legacy"/);
 });
 
-test('根路径返回多上游用法', async () => {
+test('根路径返回 HTML 首页', async () => {
   const response = await handleRequest(
     new Request('https://maven.example.com/'),
     {},
   );
-  const body = await response.json();
+  const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(body.name, packageJson.name);
-  assert.equal(body.version, packageJson.version);
-  assert.equal(body.description, packageJson.description);
-  assert.deepEqual(body.author, packageJson.author);
-  assert.deepEqual(body.repository, packageJson.repository);
-  assert.equal(body.usage, '/<upstream-host>/<upstream-path>/<maven-path>');
-  assert.match(body.example, /maven\.pkg\.github\.com/);
-  assert.deepEqual(body.allowedHosts, ['maven.pkg.github.com']);
-  assert.equal(body.legacy, undefined);
+  assert.match(response.headers.get('content-type'), /^text\/html/);
+  assert.match(html, /<!doctype html>/i);
+  assert.ok(html.includes(packageJson.name));
+  assert.ok(html.includes(packageJson.description));
+  assert.ok(html.includes('maven.pkg.github.com'));
+  assert.ok(html.includes('https://github.com/xuxiaowei-com-cn/esa-maven'));
+  assert.ok(html.includes('maven.example.com'));
+  assert.doesNotMatch(html, /AliyunCaptcha/);
+});
+
+test('HEAD / 返回 HTML 响应头但没有响应体', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/', { method: 'HEAD' }),
+    {},
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^text\/html/);
+  assert.equal(response.body, null);
+});
+
+test('首页按环境变量注入 ESA AI 验证码', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/'),
+    {
+      ESA_CAPTCHA_SCENE_ID: 'scene-123',
+      ESA_CAPTCHA_PREFIX: 'esa-prefix',
+      ESA_CAPTCHA_REGION: 'sgp',
+    },
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /window\.AliyunCaptchaConfig/);
+  assert.match(html, /region: "sgp"/);
+  assert.match(html, /prefix: "esa-prefix"/);
+  assert.match(html, /SceneId: "scene-123"/);
+  assert.match(
+    html,
+    /https:\/\/o\.alicdn\.com\/captcha-frontend\/aliyunCaptcha\/AliyunCaptcha\.js/,
+  );
+  assert.match(html, /initAliyunCaptcha/);
+  assert.match(html, /captcha-esa-open\.aliyuncs\.com/);
+});
+
+test('ESA_CAPTCHA_ID 可作为场景 ID 别名', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/'),
+    {
+      ESA_CAPTCHA_ID: 'scene-alias',
+      ESA_CAPTCHA_PREFIX: 'esa-prefix',
+    },
+  );
+  const html = await response.text();
+
+  assert.match(html, /SceneId: "scene-alias"/);
+});
+
+test('验证码 ID 会安全转义', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/'),
+    {
+      ESA_CAPTCHA_SCENE_ID: '"></script><script>alert(1)</script>',
+      ESA_CAPTCHA_PREFIX: 'esa-prefix',
+    },
+  );
+  const html = await response.text();
+
+  assert.doesNotMatch(html, /<\/script><script>alert/);
+  assert.match(html, /\\u003c\/script>/);
+});
+
+test('健康检查返回验证码配置状态', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/-/health'),
+    {
+      ESA_CAPTCHA_SCENE_ID: 'scene-123',
+      ESA_CAPTCHA_PREFIX: 'esa-prefix',
+      ESA_CAPTCHA_REGION: 'sgp',
+    },
+  );
+  const body = await response.json();
+  const text = JSON.stringify(body);
+
+  assert.deepEqual(body.captcha, {
+    enabled: true,
+    sceneIdConfigured: true,
+    prefixConfigured: true,
+    region: 'sgp',
+  });
+  assert.doesNotMatch(text, /scene-123/);
+  assert.doesNotMatch(text, /esa-prefix/);
 });
 
 test('路径中的 .. 不能绕过主机白名单', async () => {

@@ -363,7 +363,7 @@ function renderHomePage(url, runtime, captcha) {
         "PingFang SC", "Microsoft YaHei", sans-serif;
       line-height: 1.6;
     }
-    .wrap { width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 64px; }
+    .wrap { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 64px; }
     .hero {
       padding: 32px;
       border: 1px solid var(--line);
@@ -389,8 +389,35 @@ function renderHomePage(url, runtime, captcha) {
       border-radius: 999px;
     }
     .desc { margin: 12px 0 0; color: var(--muted); font-size: 16px; }
-    .grid { display: grid; gap: 16px; margin-top: 20px; }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .grid.with-captcha {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .card.primary { grid-column: 1 / -1; }
+    .hero-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pill {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
     .card {
+      min-width: 0;
       padding: 22px;
       border: 1px solid var(--line);
       border-radius: 14px;
@@ -405,13 +432,15 @@ function renderHomePage(url, runtime, captcha) {
     }
     .code {
       display: block;
-      overflow-x: auto;
+      max-width: 100%;
       padding: 12px 14px;
       border-radius: 10px;
       background: var(--brand-soft);
       border: 1px solid var(--line);
       color: var(--text);
-      white-space: nowrap;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-all;
     }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; }
     .chips code {
@@ -435,11 +464,13 @@ function renderHomePage(url, runtime, captcha) {
     }
     .button:hover { filter: brightness(1.08); }
     .status { min-height: 1.6em; color: var(--muted); }
-    footer { margin-top: 24px; color: var(--muted); font-size: 13px; }
+    footer { margin-top: 24px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+    footer a { overflow-wrap: anywhere; word-break: break-word; }
     footer p { margin: 4px 0; }
-    @media (max-width: 600px) {
+    @media (max-width: 700px) {
       .wrap { padding-top: 24px; }
       .hero, .card { padding: 18px; }
+      .grid.with-captcha { grid-template-columns: minmax(0, 1fr); }
     }
   </style>
   ${captchaHead}
@@ -447,15 +478,23 @@ function renderHomePage(url, runtime, captcha) {
 <body>
   <main class="wrap">
     <header class="hero">
-      <div class="brand">
-        ${escapeHtml(PROJECT_NAME)}
-        <span class="version">v${escapeHtml(PROJECT_VERSION)}</span>
+      <div class="hero-top">
+        <div>
+          <div class="brand">
+            ${escapeHtml(PROJECT_NAME)}
+            <span class="version">v${escapeHtml(PROJECT_VERSION)}</span>
+          </div>
+          <p class="desc">${escapeHtml(PROJECT_DESCRIPTION)}</p>
+        </div>
+        <div class="badges">
+          <span class="pill">ESA Workers</span>
+          <span class="pill">Maven Proxy</span>
+        </div>
       </div>
-      <p class="desc">${escapeHtml(PROJECT_DESCRIPTION)}</p>
     </header>
 
-    <div class="grid">
-      <section class="card">
+    <div class="grid${captcha.enabled ? ' with-captcha' : ''}">
+      <section class="card primary">
         <h2>Maven 仓库地址</h2>
         <p class="muted">把仓库 URL 设为：</p>
         <code class="code">${escapeHtml(origin)}/&lt;upstream-host&gt;/&lt;upstream-path&gt;</code>

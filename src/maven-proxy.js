@@ -14,6 +14,7 @@ import packageJson from '../package.json' with { type: 'json' };
 import { base64EncodeUtf8 } from './base64.js';
 
 const HEALTH_PATH = '/-/health';
+const CAPTCHA_PATH = '/captcha.html';
 const PATH_FORMAT = '/<upstream-host>/<upstream-path>/<maven-path>';
 const PROJECT_NAME = packageJson.name ?? '';
 const PROJECT_VERSION = packageJson.version ?? '';
@@ -70,15 +71,28 @@ export async function handleRequest(request, env = {}) {
     return jsonResponse(request, 200, describeRuntime(env));
   }
 
+  if (url.pathname === CAPTCHA_PATH) {
+    if (!isReadMethod(request.method)) {
+      return methodNotAllowed();
+    }
+    return htmlResponse(
+      request,
+      renderCaptchaPage(resolveCaptchaConfig(env)),
+    );
+  }
+
   if (url.pathname === '/' || url.pathname === '') {
     if (!isReadMethod(request.method)) {
       return methodNotAllowed();
     }
+
+    const captcha = resolveCaptchaConfig(env);
+    if (captcha.enabled && !url.searchParams.has('captcha_verify_param')) {
+      return Response.redirect(new URL(CAPTCHA_PATH, url).toString(), 302);
+    }
+
     const runtime = describeRuntime(env);
-    return htmlResponse(
-      request,
-      renderHomePage(url, runtime, resolveCaptchaConfig(env)),
-    );
+    return htmlResponse(request, renderHomePage(url, runtime));
   }
 
   if (!isReadMethod(request.method)) {
@@ -309,7 +323,7 @@ function htmlResponse(request, html) {
   });
 }
 
-function renderHomePage(url, runtime, captcha) {
+function renderHomePage(url, runtime) {
   const origin = url.origin;
   const author = authorInfo(AUTHOR);
   const repoHref = repositoryHref(REPOSITORY);
@@ -323,8 +337,6 @@ function renderHomePage(url, runtime, captcha) {
   const exampleMetadata =
     `${exampleBase}/com/alibaba/cloud/spring-cloud-alibaba-dependencies`
     + '/2026.0.0.0-SNAPSHOT/maven-metadata.xml';
-  const captchaHead = captcha.enabled ? renderCaptchaHead(captcha) : '';
-  const captchaBody = captcha.enabled ? renderCaptchaBody(captcha) : '';
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -370,6 +382,13 @@ function renderHomePage(url, runtime, captcha) {
       border-radius: 18px;
       background: linear-gradient(135deg, var(--brand-soft), var(--card));
     }
+    .hero-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
     .brand {
       display: flex;
       align-items: center;
@@ -389,23 +408,6 @@ function renderHomePage(url, runtime, captcha) {
       border-radius: 999px;
     }
     .desc { margin: 12px 0 0; color: var(--muted); font-size: 16px; }
-    .grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 16px;
-      margin-top: 20px;
-    }
-    .grid.with-captcha {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .card.primary { grid-column: 1 / -1; }
-    .hero-top {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 24px;
-      flex-wrap: wrap;
-    }
     .badges { display: flex; gap: 8px; flex-wrap: wrap; }
     .pill {
       font-size: 12px;
@@ -415,6 +417,12 @@ function renderHomePage(url, runtime, captcha) {
       border: 1px solid var(--line);
       padding: 4px 10px;
       border-radius: 999px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+      margin-top: 20px;
     }
     .card {
       min-width: 0;
@@ -451,29 +459,14 @@ function renderHomePage(url, runtime, captcha) {
     }
     a { color: var(--brand); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .button {
-      appearance: none;
-      border: 0;
-      border-radius: 10px;
-      background: var(--brand);
-      color: #fff;
-      padding: 10px 18px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .button:hover { filter: brightness(1.08); }
-    .status { min-height: 1.6em; color: var(--muted); }
     footer { margin-top: 24px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
     footer a { overflow-wrap: anywhere; word-break: break-word; }
     footer p { margin: 4px 0; }
     @media (max-width: 700px) {
       .wrap { padding-top: 24px; }
       .hero, .card { padding: 18px; }
-      .grid.with-captcha { grid-template-columns: minmax(0, 1fr); }
     }
   </style>
-  ${captchaHead}
 </head>
 <body>
   <main class="wrap">
@@ -493,8 +486,8 @@ function renderHomePage(url, runtime, captcha) {
       </div>
     </header>
 
-    <div class="grid${captcha.enabled ? ' with-captcha' : ''}">
-      <section class="card primary">
+    <div class="grid">
+      <section class="card">
         <h2>Maven 仓库地址</h2>
         <p class="muted">把仓库 URL 设为：</p>
         <code class="code">${escapeHtml(origin)}/&lt;upstream-host&gt;/&lt;upstream-path&gt;</code>
@@ -512,8 +505,6 @@ function renderHomePage(url, runtime, captcha) {
           <a href="/-/health"><code>/-/health</code></a>。
         </p>
       </section>
-
-      ${captchaBody}
     </div>
 
     <footer>
@@ -522,6 +513,112 @@ function renderHomePage(url, runtime, captcha) {
       <p>Powered by Alibaba Cloud ESA Workers</p>
     </footer>
   </main>
+</body>
+</html>`;
+}
+
+function renderCaptchaPage(captcha) {
+  const title = '安全验证';
+  if (!captcha.enabled) {
+    return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title} - ${escapeHtml(PROJECT_NAME)}</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#0f172a; --card:#ffffff; --text:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#2563eb; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#020617; --card:#0f172a; --text:#e5e7eb; --muted:#94a3b8; --line:#1e293b; --brand:#60a5fa; } }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; background:radial-gradient(circle at top, #1e3a8a 0, var(--bg) 55%); color:var(--text); font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; line-height:1.6; }
+    .box { width:min(440px, 100%); padding:32px; border-radius:20px; background:var(--card); border:1px solid var(--line); box-shadow:0 24px 80px rgba(15,23,42,.25); text-align:center; }
+    h1 { margin:0 0 8px; font-size:24px; }
+    p { margin:8px 0; }
+    .muted { color:var(--muted); }
+    .small { font-size:13px; }
+    a { color:var(--brand); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <main class="box">
+    <h1>${title}</h1>
+    <p class="muted">ESA AI 验证码尚未配置。</p>
+    <p class="muted small">请设置 ESA_CAPTCHA_SCENE_ID 和 ESA_CAPTCHA_PREFIX。</p>
+    <p class="muted small"><a href="/-/health">查看服务状态</a></p>
+  </main>
+</body>
+</html>`;
+  }
+
+  const servers = captchaServers(captcha.region)
+    .map((server) => jsLiteral(server))
+    .join(', ');
+  const captchaHead = renderCaptchaHead(captcha);
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title} - ${escapeHtml(PROJECT_NAME)}</title>
+  ${captchaHead}
+  <style>
+    :root { color-scheme: light dark; --bg:#0f172a; --card:#ffffff; --text:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#2563eb; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#020617; --card:#0f172a; --text:#e5e7eb; --muted:#94a3b8; --line:#1e293b; --brand:#60a5fa; } }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; background:radial-gradient(circle at top, #1e3a8a 0, var(--bg) 55%); color:var(--text); font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; line-height:1.6; }
+    .box { width:min(440px, 100%); padding:32px; border-radius:20px; background:var(--card); border:1px solid var(--line); box-shadow:0 24px 80px rgba(15,23,42,.25); text-align:center; }
+    h1 { margin:0 0 8px; font-size:24px; }
+    p { margin:8px 0; }
+    .muted { color:var(--muted); }
+    .small { font-size:13px; }
+    .button { appearance:none; border:0; border-radius:10px; background:var(--brand); color:#fff; padding:11px 22px; font-size:14px; font-weight:600; cursor:pointer; margin-top:8px; }
+    .button:hover { filter:brightness(1.08); }
+    .status { min-height:1.6em; color:var(--muted); }
+    a { color:var(--brand); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <main class="box">
+    <h1>${title}</h1>
+    <p class="muted">请完成验证后访问 ${escapeHtml(PROJECT_NAME)}。</p>
+    <div id="captcha-element"></div>
+    <button id="captcha-button" class="button" type="button">开始验证</button>
+    <p id="captcha-status" class="status" role="status"></p>
+    <p class="muted small"><a href="/-/health">服务状态</a></p>
+  </main>
+  <script>
+    (function () {
+      var status = document.getElementById('captcha-status');
+      if (typeof window.initAliyunCaptcha !== 'function') {
+        status.textContent = '验证码脚本加载失败，请刷新重试';
+        return;
+      }
+      window.initAliyunCaptcha({
+        SceneId: ${jsLiteral(captcha.sceneId)},
+        mode: 'popup',
+        element: '#captcha-element',
+        button: '#captcha-button',
+        success: function (captchaVerifyParam) {
+          status.textContent = '验证通过，正在进入...';
+          window.location.replace(
+            '/?captcha_verify_param=' + encodeURIComponent(captchaVerifyParam)
+          );
+        },
+        fail: function (result) {
+          status.textContent = '验证失败，请重试';
+          console.error(result);
+        },
+        getInstance: function (instance) {
+          window.__esaCaptcha = instance;
+        },
+        server: [${servers}],
+        slideStyle: { width: 360, height: 40 }
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }
@@ -536,41 +633,13 @@ function renderCaptchaHead(captcha) {
     <script src="https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js"></script>`;
 }
 
-function renderCaptchaBody(captcha) {
-  return `<section class="card">
-        <h2>人机验证</h2>
-        <p class="muted">本站已接入 ESA AI 验证码。</p>
-        <div id="captcha-element"></div>
-        <button id="captcha-button" class="button" type="button">开始验证</button>
-        <p id="captcha-status" class="status" role="status"></p>
-      </section>
-      <script>
-        (function () {
-          var status = document.getElementById('captcha-status');
-          if (typeof window.initAliyunCaptcha !== 'function') {
-            status.textContent = '验证码脚本加载失败';
-            return;
-          }
-          window.initAliyunCaptcha({
-            SceneId: ${jsLiteral(captcha.sceneId)},
-            mode: 'popup',
-            element: '#captcha-element',
-            button: '#captcha-button',
-            success: function () {
-              status.textContent = '验证通过';
-            },
-            fail: function (result) {
-              status.textContent = '验证失败，请重试';
-              console.error(result);
-            },
-            getInstance: function (instance) {
-              window.__esaCaptcha = instance;
-            },
-            server: ['captcha-esa-open.aliyuncs.com', 'captcha-esa-open-b.aliyuncs.com'],
-            slideStyle: { width: 360, height: 40 }
-          });
-        })();
-      </script>`;
+function captchaServers(region) {
+  return region === 'sgp'
+    ? [
+        'captcha-esa-open-southeast.aliyuncs.com',
+        'captcha-esa-open-southeast-b.aliyuncs.com',
+      ]
+    : ['captcha-esa-open.aliyuncs.com', 'captcha-esa-open-b.aliyuncs.com'];
 }
 
 function authorInfo(author) {

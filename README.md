@@ -270,11 +270,20 @@ curl https://maven.example.com/-/health
 }
 ```
 
-根路径 `/` 返回 HTML 首页，展示 `name`、`version`、`description`、`author`、`repository`、Maven 仓库地址和允许的上游；这些信息来自 `package.json`。`/-/health` 仍返回 JSON，并额外返回 `captcha` 配置状态。
+根路径 `/` 返回 HTML 首页，展示 `name`、`version`、`description`、`author`、`repository`、Maven 仓库地址和允许的上游；这些信息来自 `package.json`。开启整页验证码且没有 `captcha_verify_param` 时，`/` 会跳转到 `/captcha.html`。`/-/health` 仍返回 JSON，并额外返回 `captcha` 配置状态。
 
-### 首页与 ESA AI 验证码
+### 整页 ESA AI 验证码
 
-`/` 返回 HTML 首页，`/-/health` 返回 JSON。首页可选集成 ESA AI 验证码：
+`/` 是受保护页面，`/captcha.html` 是独立验证页。流程：
+
+```text
+访问 /
+  -> 无 captcha_verify_param：跳转 /captcha.html
+  -> 在 /captcha.html 完成验证
+  -> 跳转 /?captcha_verify_param=...
+  -> ESA AI 验证码规则校验参数
+  -> 校验通过后回源到 Worker，返回首页
+```
 
 | 变量 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -291,12 +300,24 @@ npx esa-cli env set "ESA_CAPTCHA_REGION=cn" --environment production
 npx esa-cli deploy --environment production
 ```
 
+ESA 控制台还需要做两步：
+
+1. **AI 验证码规则**
+   - 需验签的接口：`maven.xuxiaowei.com.cn/`
+   - 需验签的请求方法：`GET`
+   - 验证码类型按需选择；身份标和场景 ID 从该页面获取
+
+2. **重写/重定向规则**
+   - 当 URI 为 `/` 且请求参数 `captcha_verify_param` 不存在时，跳转到 `/captcha.html`
+   - `/captcha.html` 本身不要命中该规则，否则会循环
+
 说明：
 
-- 场景 ID 和身份标必须**同时配置**；只配置一个时首页不加载验证码。
+- 场景 ID 和身份标必须**同时配置**；只配置一个时 `/captcha.html` 提示未配置，`/` 不会跳转。
 - 这两个值不是密钥，用普通函数变量即可，不需要 `secret put`。
-- 还需要在 ESA 控制台的 **AI 验证码** 中新增规则，需验签接口填写 `maven.xuxiaowei.com.cn/`，请求方法选择 `GET`；身份标和场景 ID 从该配置页面获取。
-- 首页只负责初始化验证码组件；实际验签由 ESA 的 AI 验证码规则完成。
+- Worker 对 `/` 也有兜底跳转：开启验证码且没有 `captcha_verify_param` 时返回 `302` 到 `/captcha.html`。但真正的验签必须由 ESA AI 验证码规则完成，否则参数只校验了“存在”，没有校验“有效”。
+- `/captcha.html` 会根据 `ESA_CAPTCHA_REGION` 自动选择中国内地或新加坡的 ESA 验证码服务域名。
+- 直接访问 `/` 且不携带参数时，会被重定向到验证页；携带无效参数时，由 ESA 规则返回 `403`。
 - `/-/health` 的 `captcha` 字段只显示是否配置及 region，不返回场景 ID 或身份标。
 
 ### favicon

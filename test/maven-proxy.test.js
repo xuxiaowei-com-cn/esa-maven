@@ -657,9 +657,25 @@ test('HEAD / 返回 HTML 响应头但没有响应体', async () => {
   assert.equal(response.body, null);
 });
 
-test('首页按环境变量注入 ESA AI 验证码', async () => {
+test('开启验证码后首页跳转到验证码页', async () => {
   const response = await handleRequest(
     new Request('https://maven.example.com/'),
+    {
+      ESA_CAPTCHA_SCENE_ID: 'scene-123',
+      ESA_CAPTCHA_PREFIX: 'esa-prefix',
+    },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(
+    response.headers.get('location'),
+    'https://maven.example.com/captcha.html',
+  );
+});
+
+test('验证码页按环境变量初始化 ESA AI 验证码', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/captcha.html'),
     {
       ESA_CAPTCHA_SCENE_ID: 'scene-123',
       ESA_CAPTCHA_PREFIX: 'esa-prefix',
@@ -677,13 +693,42 @@ test('首页按环境变量注入 ESA AI 验证码', async () => {
     html,
     /https:\/\/o\.alicdn\.com\/captcha-frontend\/aliyunCaptcha\/AliyunCaptcha\.js/,
   );
-  assert.match(html, /initAliyunCaptcha/);
-  assert.match(html, /captcha-esa-open\.aliyuncs\.com/);
+  assert.match(html, /captcha-esa-open-southeast\.aliyuncs\.com/);
+  assert.match(html, /captcha-esa-open-southeast-b\.aliyuncs\.com/);
+  assert.match(html, /captcha_verify_param=/);
+  assert.match(html, /window\.location\.replace/);
+});
+
+test('带 captcha_verify_param 时首页正常返回', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/?captcha_verify_param=test'),
+    {
+      ESA_CAPTCHA_SCENE_ID: 'scene-123',
+      ESA_CAPTCHA_PREFIX: 'esa-prefix',
+    },
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /Maven 仓库地址/);
+  assert.doesNotMatch(html, /AliyunCaptcha/);
+});
+
+test('未配置验证码时验证码页给出提示', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/captcha.html'),
+    {},
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /尚未配置/);
+  assert.doesNotMatch(html, /AliyunCaptcha/);
 });
 
 test('ESA_CAPTCHA_ID 可作为场景 ID 别名', async () => {
   const response = await handleRequest(
-    new Request('https://maven.example.com/'),
+    new Request('https://maven.example.com/captcha.html'),
     {
       ESA_CAPTCHA_ID: 'scene-alias',
       ESA_CAPTCHA_PREFIX: 'esa-prefix',
@@ -696,7 +741,7 @@ test('ESA_CAPTCHA_ID 可作为场景 ID 别名', async () => {
 
 test('验证码 ID 会安全转义', async () => {
   const response = await handleRequest(
-    new Request('https://maven.example.com/'),
+    new Request('https://maven.example.com/captcha.html'),
     {
       ESA_CAPTCHA_SCENE_ID: '"></script><script>alert(1)</script>',
       ESA_CAPTCHA_PREFIX: 'esa-prefix',

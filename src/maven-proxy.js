@@ -6,7 +6,6 @@ import {
   normalizeHostname,
   parseUpstreamRoute,
   resolveAllowedHosts,
-  resolveCaptchaConfig,
   resolveHostConfig,
   resolvePathFilters,
 } from './config.js';
@@ -75,10 +74,24 @@ export async function handleRequest(request, env = {}) {
       return methodNotAllowed();
     }
     const runtime = describeRuntime(env);
-    return htmlResponse(
-      request,
-      renderHomePage(url, runtime, resolveCaptchaConfig(env)),
-    );
+    return jsonResponse(request, 200, {
+      name: PROJECT_NAME,
+      version: PROJECT_VERSION,
+      description: PROJECT_DESCRIPTION,
+      author: AUTHOR,
+      repository: REPOSITORY,
+      usage: PATH_FORMAT,
+      example:
+        '/maven.pkg.github.com/alibaba/spring-cloud-alibaba/com/alibaba/cloud/'
+        + 'spring-cloud-alibaba-dependencies/2026.0.0.0-SNAPSHOT/maven-metadata.xml',
+      allowedHosts: runtime.allowedHosts,
+      hosts: runtime.hosts,
+      endpoints: [
+        'GET /<upstream-host>/<upstream-path>/<maven-path>',
+        'HEAD /<upstream-host>/<upstream-path>/<maven-path>',
+        'GET /-/health',
+      ],
+    });
   }
 
   if (!isReadMethod(request.method)) {
@@ -288,307 +301,7 @@ function describeRuntime(env) {
     runtime.note = 'MAVEN_ALLOWED_HOSTS=* 允许任意合法域名，请谨慎使用';
   }
 
-  const captcha = resolveCaptchaConfig(env);
-  runtime.captcha = {
-    enabled: captcha.enabled,
-    sceneIdConfigured: Boolean(captcha.sceneId),
-    prefixConfigured: Boolean(captcha.prefix),
-    region: captcha.region,
-  };
-
   return runtime;
-}
-
-function htmlResponse(request, html) {
-  return new Response(request.method === 'HEAD' ? null : html, {
-    headers: {
-      'cache-control': 'no-store',
-      'content-type': 'text/html; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-    },
-  });
-}
-
-function renderHomePage(url, runtime, captcha) {
-  const origin = url.origin;
-  const author = authorInfo(AUTHOR);
-  const repoHref = repositoryHref(REPOSITORY);
-  const allowedHosts = runtime.allowedHosts.length
-    ? runtime.allowedHosts
-        .map((host) => `<code>${escapeHtml(host)}</code>`)
-        .join(' ')
-    : '<span class="muted">未配置</span>';
-  const exampleBase =
-    `${origin}/maven.pkg.github.com/alibaba/spring-cloud-alibaba`;
-  const exampleMetadata =
-    `${exampleBase}/com/alibaba/cloud/spring-cloud-alibaba-dependencies`
-    + '/2026.0.0.0-SNAPSHOT/maven-metadata.xml';
-  const captchaHead = captcha.enabled ? renderCaptchaHead(captcha) : '';
-  const captchaBody = captcha.enabled ? renderCaptchaBody(captcha) : '';
-
-  return `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(PROJECT_NAME)}</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      --bg: #f6f7fb;
-      --card: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --line: #e5e7eb;
-      --brand: #2563eb;
-      --brand-soft: #eff6ff;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0b1220;
-        --card: #111a2e;
-        --text: #e5e7eb;
-        --muted: #9ca3af;
-        --line: #243047;
-        --brand: #60a5fa;
-        --brand-soft: #12213d;
-      }
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        "PingFang SC", "Microsoft YaHei", sans-serif;
-      line-height: 1.6;
-    }
-    .wrap { width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 64px; }
-    .hero {
-      padding: 32px;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: linear-gradient(135deg, var(--brand-soft), var(--card));
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      font-size: clamp(28px, 4vw, 42px);
-      font-weight: 800;
-      letter-spacing: -0.03em;
-    }
-    .version {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--brand);
-      background: var(--card);
-      border: 1px solid var(--line);
-      padding: 4px 10px;
-      border-radius: 999px;
-    }
-    .desc { margin: 12px 0 0; color: var(--muted); font-size: 16px; }
-    .grid { display: grid; gap: 16px; margin-top: 20px; }
-    .card {
-      padding: 22px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--card);
-    }
-    h2 { margin: 0 0 12px; font-size: 18px; }
-    p { margin: 8px 0; }
-    .muted { color: var(--muted); }
-    code, .code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 13px;
-    }
-    .code {
-      display: block;
-      overflow-x: auto;
-      padding: 12px 14px;
-      border-radius: 10px;
-      background: var(--brand-soft);
-      border: 1px solid var(--line);
-      color: var(--text);
-      white-space: nowrap;
-    }
-    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-    .chips code {
-      padding: 4px 8px;
-      border-radius: 8px;
-      background: var(--brand-soft);
-      border: 1px solid var(--line);
-    }
-    a { color: var(--brand); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .button {
-      appearance: none;
-      border: 0;
-      border-radius: 10px;
-      background: var(--brand);
-      color: #fff;
-      padding: 10px 18px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .button:hover { filter: brightness(1.08); }
-    .status { min-height: 1.6em; color: var(--muted); }
-    footer { margin-top: 24px; color: var(--muted); font-size: 13px; }
-    footer p { margin: 4px 0; }
-    @media (max-width: 600px) {
-      .wrap { padding-top: 24px; }
-      .hero, .card { padding: 18px; }
-    }
-  </style>
-  ${captchaHead}
-</head>
-<body>
-  <main class="wrap">
-    <header class="hero">
-      <div class="brand">
-        ${escapeHtml(PROJECT_NAME)}
-        <span class="version">v${escapeHtml(PROJECT_VERSION)}</span>
-      </div>
-      <p class="desc">${escapeHtml(PROJECT_DESCRIPTION)}</p>
-    </header>
-
-    <div class="grid">
-      <section class="card">
-        <h2>Maven 仓库地址</h2>
-        <p class="muted">把仓库 URL 设为：</p>
-        <code class="code">${escapeHtml(origin)}/&lt;upstream-host&gt;/&lt;upstream-path&gt;</code>
-        <p class="muted">GitHub Packages 示例：</p>
-        <code class="code">${escapeHtml(exampleBase)}</code>
-        <p class="muted">验证快照元数据：</p>
-        <code class="code">${escapeHtml(exampleMetadata)}</code>
-      </section>
-
-      <section class="card">
-        <h2>允许的上游</h2>
-        <div class="chips">${allowedHosts}</div>
-        <p class="muted">
-          认证状态、路径过滤等运行配置见
-          <a href="/-/health"><code>/-/health</code></a>。
-        </p>
-      </section>
-
-      ${captchaBody}
-    </div>
-
-    <footer>
-      <p>作者：${author.html}</p>
-      <p>源码：${repoHref ? `<a href="${escapeHtml(repoHref)}">${escapeHtml(repoHref)}</a>` : '未配置'}</p>
-      <p>Powered by Alibaba Cloud ESA Workers</p>
-    </footer>
-  </main>
-</body>
-</html>`;
-}
-
-function renderCaptchaHead(captcha) {
-  return `<script>
-      window.AliyunCaptchaConfig = {
-        region: ${jsLiteral(captcha.region)},
-        prefix: ${jsLiteral(captcha.prefix)}
-      };
-    </script>
-    <script src="https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js"></script>`;
-}
-
-function renderCaptchaBody(captcha) {
-  return `<section class="card">
-        <h2>人机验证</h2>
-        <p class="muted">本站已接入 ESA AI 验证码。</p>
-        <div id="captcha-element"></div>
-        <button id="captcha-button" class="button" type="button">开始验证</button>
-        <p id="captcha-status" class="status" role="status"></p>
-      </section>
-      <script>
-        (function () {
-          var status = document.getElementById('captcha-status');
-          if (typeof window.initAliyunCaptcha !== 'function') {
-            status.textContent = '验证码脚本加载失败';
-            return;
-          }
-          window.initAliyunCaptcha({
-            SceneId: ${jsLiteral(captcha.sceneId)},
-            mode: 'popup',
-            element: '#captcha-element',
-            button: '#captcha-button',
-            success: function () {
-              status.textContent = '验证通过';
-            },
-            fail: function (result) {
-              status.textContent = '验证失败，请重试';
-              console.error(result);
-            },
-            getInstance: function (instance) {
-              window.__esaCaptcha = instance;
-            },
-            server: ['captcha-esa-open.aliyuncs.com', 'captcha-esa-open-b.aliyuncs.com'],
-            slideStyle: { width: 360, height: 40 }
-          });
-        })();
-      </script>`;
-}
-
-function authorInfo(author) {
-  if (typeof author === 'string') {
-    return { html: escapeHtml(author) };
-  }
-  const name = author?.name ? escapeHtml(author.name) : '未配置';
-  const email = author?.email ? escapeHtml(author.email) : '';
-  const url = author?.url ? safeHttpUrl(author.url) : '';
-  const nameHtml = url
-    ? `<a href="${escapeHtml(url)}">${name}</a>`
-    : name;
-  return {
-    html: email ? `${nameHtml} &lt;${email}&gt;` : nameHtml,
-  };
-}
-
-function repositoryHref(repository) {
-  const raw = typeof repository === 'string' ? repository : repository?.url;
-  if (!raw) {
-    return '';
-  }
-  let value = String(raw).trim().replace(/^git\+/, '');
-  if (value.startsWith('git@')) {
-    const match = value.match(/^git@([^:]+):(.+)$/);
-    if (match) {
-      value = `https://${match[1]}/${match[2]}`;
-    }
-  }
-  return safeHttpUrl(value.replace(/\.git$/, ''));
-}
-
-function safeHttpUrl(value) {
-  try {
-    const url = new URL(String(value));
-    return url.protocol === 'https:' || url.protocol === 'http:'
-      ? url.toString()
-      : '';
-  } catch {
-    return '';
-  }
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function jsLiteral(value) {
-  return JSON.stringify(String(value ?? ''))
-    .replace(/</g, '\\u003c')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
 }
 
 function isReadMethod(method) {

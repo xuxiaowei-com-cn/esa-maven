@@ -133,30 +133,6 @@ function compilePathRegex(source, key) {
 }
 
 /**
- * ESA AI 验证码前端配置。
- *
- * 场景 ID 支持 ESA_CAPTCHA_SCENE_ID，也兼容 ESA_CAPTCHA_ID。
- * 身份标使用 ESA_CAPTCHA_PREFIX；两者同时配置才启用验证码。
- */
-export function resolveCaptchaConfig(env = {}) {
-  const sceneId =
-    readEnv(env, 'ESA_CAPTCHA_SCENE_ID').trim() ||
-    readEnv(env, 'ESA_CAPTCHA_ID').trim();
-  const prefix = readEnv(env, 'ESA_CAPTCHA_PREFIX').trim();
-  const region =
-    readEnv(env, 'ESA_CAPTCHA_REGION').trim().toLowerCase() === 'sgp'
-      ? 'sgp'
-      : 'cn';
-
-  return {
-    sceneId,
-    prefix,
-    region,
-    enabled: Boolean(sceneId && prefix),
-  };
-}
-
-/**
  * 路径过滤规则，变量名基于上游域名：
  *   github.com
  *   -> GITHUB_COM_PATH_CONTAINS

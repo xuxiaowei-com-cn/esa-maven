@@ -240,12 +240,6 @@ curl https://maven.example.com/-/health
     "type": "git",
     "url": "git+https://github.com/xuxiaowei-com-cn/esa-maven.git"
   },
-  "captcha": {
-    "enabled": false,
-    "sceneIdConfigured": false,
-    "prefixConfigured": false,
-    "region": "cn"
-  },
   "allowedHosts": ["maven.pkg.github.com", "repo1.maven.org"],
   "hosts": [
     {
@@ -270,34 +264,7 @@ curl https://maven.example.com/-/health
 }
 ```
 
-根路径 `/` 返回 HTML 首页，展示 `name`、`version`、`description`、`author`、`repository`、Maven 仓库地址和允许的上游；这些信息来自 `package.json`。`/-/health` 仍返回 JSON，并额外返回 `captcha` 配置状态。
-
-### 首页与 ESA AI 验证码
-
-`/` 返回 HTML 首页，`/-/health` 返回 JSON。首页可选集成 ESA AI 验证码：
-
-| 变量 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `ESA_CAPTCHA_SCENE_ID` | 否 | 空 | ESA AI 验证码场景 ID；也可用 `ESA_CAPTCHA_ID` |
-| `ESA_CAPTCHA_PREFIX` | 否 | 空 | ESA AI 验证码身份标 |
-| `ESA_CAPTCHA_REGION` | 否 | `cn` | `cn`（中国内地）或 `sgp`（新加坡） |
-
-配置示例：
-
-```bash
-npx esa-cli env set "ESA_CAPTCHA_SCENE_ID=<scene-id>" --environment production
-npx esa-cli env set "ESA_CAPTCHA_PREFIX=<identity>" --environment production
-npx esa-cli env set "ESA_CAPTCHA_REGION=cn" --environment production
-npx esa-cli deploy --environment production
-```
-
-说明：
-
-- 场景 ID 和身份标必须**同时配置**；只配置一个时首页不加载验证码。
-- 这两个值不是密钥，用普通函数变量即可，不需要 `secret put`。
-- 还需要在 ESA 控制台的 **AI 验证码** 中新增规则，需验签接口填写 `maven.xuxiaowei.com.cn/`，请求方法选择 `GET`；身份标和场景 ID 从该配置页面获取。
-- 首页只负责初始化验证码组件；实际验签由 ESA 的 AI 验证码规则完成。
-- `/-/health` 的 `captcha` 字段只显示是否配置及 region，不返回场景 ID 或身份标。
+根路径 `/` 会返回 `name`、`version`、`description`、`author`、`repository`，均读取 `package.json`；`/-/health` 也会返回 `author`、`repository`。`repository` 直接返回 `package.json` 中的值，不做额外处理。
 
 ### favicon
 

@@ -2,10 +2,12 @@ import {
   ConfigError,
   DEFAULT_USER_AGENT,
   isSupportedHostname,
+  matchesPathFilters,
   normalizeHostname,
   parseUpstreamRoute,
   resolveAllowedHosts,
   resolveHostConfig,
+  resolvePathFilters,
 } from './config.js';
 import packageJson from '../package.json' with { type: 'json' };
 import { base64EncodeUtf8 } from './base64.js';
@@ -128,6 +130,28 @@ function handleUpstream(request, url, route, env) {
     );
   }
 
+  let filters;
+  try {
+    filters = resolvePathFilters(host, env);
+  } catch (error) {
+    return configErrorResponse(error);
+  }
+
+  const rawFilterPath = `/${route.rest}`;
+  let filterPath;
+  try {
+    filterPath = decodeURIComponent(rawFilterPath);
+  } catch {
+    return textResponse(400, '路径包含非法的 URL 编码');
+  }
+
+  if (!matchesPathFilters(filterPath, filters)) {
+    return textResponse(
+      403,
+      `路径 ${filterPath} 不匹配 ${host} 的过滤规则`,
+    );
+  }
+
   let config;
   try {
     config = resolveHostConfig(host, env);
@@ -241,12 +265,29 @@ function describeRuntime(env) {
     .map((host) => {
       try {
         const config = resolveHostConfig(host, env);
-        return {
+        const filters = resolvePathFilters(host, env);
+        const entry = {
           host,
           usernameEnv: `${config.envPrefix}_USERNAME`,
           passwordEnv: `${config.envPrefix}_PASSWORD`,
           authentication: config.authEnabled ? 'basic' : 'anonymous',
         };
+
+        const pathFilters = {};
+        if (filters.contains.length > 0) {
+          pathFilters.contains = filters.contains;
+        }
+        if (filters.regexSource) {
+          pathFilters.regex = filters.regexSource;
+        }
+        if (filters.excludeRegexSource) {
+          pathFilters.excludeRegex = filters.excludeRegexSource;
+        }
+        if (Object.keys(pathFilters).length > 0) {
+          entry.pathFilters = pathFilters;
+        }
+
+        return entry;
       } catch (error) {
         return {
           host,

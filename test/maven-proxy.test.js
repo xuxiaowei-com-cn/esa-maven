@@ -294,6 +294,195 @@ test('host 级凭据不会发送到其他主机', async () => {
   }
 });
 
+test('PATH_CONTAINS 只允许包含指定字符串的路径', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  const env = {
+    MAVEN_ALLOWED_HOSTS: 'github.com',
+    GITHUB_COM_PATH_CONTAINS: '/releases/download/',
+  };
+  try {
+    const allowed = await handleRequest(
+      new Request(
+        'https://maven.example.com/github.com/owner/repo/releases/download/v1.0.0/app.jar',
+      ),
+      env,
+    );
+    assert.equal(allowed.status, 200);
+    assert.equal(
+      fetchMock.calls[0].input,
+      'https://github.com/owner/repo/releases/download/v1.0.0/app.jar',
+    );
+
+    const blocked = await handleRequest(
+      new Request(
+        'https://maven.example.com/github.com/owner/repo/archive/refs/heads/main.zip',
+      ),
+      env,
+    );
+    assert.equal(blocked.status, 403);
+    assert.match(await blocked.text(), /过滤规则/);
+
+    const queryOnly = await handleRequest(
+      new Request(
+        'https://maven.example.com/github.com/owner/repo/archive?next=/releases/download/',
+      ),
+      env,
+    );
+    assert.equal(queryOnly.status, 403);
+
+    assert.equal(fetchMock.calls.length, 1);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('PATH_CONTAINS 多个值必须全部包含', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  const env = {
+    MAVEN_ALLOWED_HOSTS: 'github.com',
+    GITHUB_COM_PATH_CONTAINS: '/releases/download/,/owner/repo/',
+  };
+  try {
+    const allowed = await handleRequest(
+      new Request(
+        'https://maven.example.com/github.com/owner/repo/releases/download/v1.0.0/app.jar',
+      ),
+      env,
+    );
+    assert.equal(allowed.status, 200);
+
+    const blocked = await handleRequest(
+      new Request(
+        'https://maven.example.com/github.com/owner/repo/archive/refs/heads/main.zip',
+      ),
+      env,
+    );
+    assert.equal(blocked.status, 403);
+    assert.equal(fetchMock.calls.length, 1);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('非法 URL 编码返回 400', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    const response = await handleRequest(
+      new Request('https://maven.example.com/github.com/owner/repo/%'),
+      { MAVEN_ALLOWED_HOSTS: 'github.com' },
+    );
+
+    assert.equal(response.status, 400);
+    assert.match(await response.text(), /URL 编码/);
+    assert.equal(fetchMock.calls.length, 0);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('PATH_REGEX 按正则过滤路径', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  const env = {
+    MAVEN_ALLOWED_HOSTS: 'repo.example.com',
+    REPO_EXAMPLE_COM_PATH_REGEX: '^/releases/',
+  };
+  try {
+    const allowed = await handleRequest(
+      new Request(
+        'https://maven.example.com/repo.example.com/releases/com/example/foo/1.0/foo-1.0.jar',
+      ),
+      env,
+    );
+    assert.equal(allowed.status, 200);
+
+    const blocked = await handleRequest(
+      new Request(
+        'https://maven.example.com/repo.example.com/snapshots/com/example/foo/1.0-SNAPSHOT/foo-1.0-SNAPSHOT.jar',
+      ),
+      env,
+    );
+    assert.equal(blocked.status, 403);
+    assert.equal(fetchMock.calls.length, 1);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('PATH_EXCLUDE_REGEX 拦截命中路径', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  const env = {
+    MAVEN_PKG_GITHUB_COM_PATH_EXCLUDE_REGEX: '-SNAPSHOT',
+  };
+  try {
+    const allowed = await handleRequest(
+      new Request(
+        'https://maven.example.com/maven.pkg.github.com/com/example/foo/1.0.0/foo-1.0.0.pom',
+      ),
+      env,
+    );
+    assert.equal(allowed.status, 200);
+
+    const blocked = await handleRequest(
+      new Request(
+        'https://maven.example.com/maven.pkg.github.com/com/example/foo/1.0.0-SNAPSHOT/foo-1.0.0-SNAPSHOT.pom',
+      ),
+      env,
+    );
+    assert.equal(blocked.status, 403);
+
+    const encodedBlocked = await handleRequest(
+      new Request(
+        'https://maven.example.com/maven.pkg.github.com/com/example/foo/1.0.0%2DSNAPSHOT/foo-1.0.0%2DSNAPSHOT.pom',
+      ),
+      env,
+    );
+    assert.equal(encodedBlocked.status, 403);
+
+    assert.equal(fetchMock.calls.length, 1);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('非法 PATH_REGEX 返回 500', async () => {
+  const fetchMock = mockFetch(() => upstreamOk());
+  try {
+    const response = await handleRequest(
+      new Request('https://maven.example.com/github.com/owner/repo/releases/download/v1/app.jar'),
+      {
+        MAVEN_ALLOWED_HOSTS: 'github.com',
+        GITHUB_COM_PATH_REGEX: '[',
+      },
+    );
+
+    assert.equal(response.status, 500);
+    assert.match(await response.text(), /GITHUB_COM_PATH_REGEX/);
+    assert.equal(fetchMock.calls.length, 0);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('健康检查返回路径过滤配置', async () => {
+  const response = await handleRequest(
+    new Request('https://maven.example.com/-/health'),
+    {
+      MAVEN_ALLOWED_HOSTS: 'github.com',
+      GITHUB_COM_PATH_CONTAINS: '/releases/download/',
+      GITHUB_COM_PATH_REGEX: '^/[^/]+/[^/]+/releases/download/',
+      GITHUB_COM_PATH_EXCLUDE_REGEX: '\\.zip$',
+    },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.hosts[0].pathFilters, {
+    contains: ['/releases/download/'],
+    regex: '^/[^/]+/[^/]+/releases/download/',
+    excludeRegex: '\\.zip$',
+  });
+});
+
 test('仅允许 GET/HEAD', async () => {
   const fetchMock = mockFetch(() => upstreamOk());
   try {

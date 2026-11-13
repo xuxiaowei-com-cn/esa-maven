@@ -122,6 +122,85 @@ export function resolveAllowedHosts(env = {}) {
   return unique;
 }
 
+function compilePathRegex(source, key) {
+  try {
+    return new RegExp(source);
+  } catch (error) {
+    throw new ConfigError(
+      `${key} 不是合法的正则表达式：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+/**
+ * 路径过滤规则，变量名基于上游域名：
+ *   github.com
+ *   -> GITHUB_COM_PATH_CONTAINS
+ *   -> GITHUB_COM_PATH_REGEX
+ *   -> GITHUB_COM_PATH_EXCLUDE_REGEX
+ *
+ * 过滤对象是 /<upstream-path>：包含前导斜杠，不包含 host 和查询参数。
+ */
+export function resolvePathFilters(host, env = {}) {
+  const envPrefix = hostEnvPrefix(host);
+  const containsRaw = readEnv(env, `${envPrefix}_PATH_CONTAINS`).trim();
+  const regexSource = readEnv(env, `${envPrefix}_PATH_REGEX`).trim();
+  const excludeRegexSource = readEnv(
+    env,
+    `${envPrefix}_PATH_EXCLUDE_REGEX`,
+  ).trim();
+
+  const contains = containsRaw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (containsRaw && contains.length === 0) {
+    throw new ConfigError(`${envPrefix}_PATH_CONTAINS 不能为空`);
+  }
+
+  return {
+    contains,
+    regex: regexSource
+      ? compilePathRegex(regexSource, `${envPrefix}_PATH_REGEX`)
+      : null,
+    regexSource,
+    excludeRegex: excludeRegexSource
+      ? compilePathRegex(
+          excludeRegexSource,
+          `${envPrefix}_PATH_EXCLUDE_REGEX`,
+        )
+      : null,
+    excludeRegexSource,
+    configured: Boolean(contains.length || regexSource || excludeRegexSource),
+  };
+}
+
+/**
+ * 返回 true 表示允许访问：
+ * - 所有 PATH_CONTAINS 子串都必须出现
+ * - 设置了 PATH_REGEX 时必须匹配
+ * - 设置了 PATH_EXCLUDE_REGEX 时不能匹配
+ */
+export function matchesPathFilters(path, filters) {
+  if (!filters?.configured) {
+    return true;
+  }
+  if (
+    filters.contains.length > 0 &&
+    !filters.contains.every((item) => path.includes(item))
+  ) {
+    return false;
+  }
+  if (filters.regex && !filters.regex.test(path)) {
+    return false;
+  }
+  if (filters.excludeRegex && filters.excludeRegex.test(path)) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * 根据上游主机构造凭据变量名：
  *   maven.pkg.github.com

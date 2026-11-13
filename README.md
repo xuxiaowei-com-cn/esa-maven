@@ -63,6 +63,9 @@ https://<upstream-host>/<upstream-path>/<maven-path>
 | `MAVEN_ALLOWED_HOSTS` | 否 | `maven.pkg.github.com` | 允许代理的上游域名，逗号分隔；设为 `*` 允许任意合法域名 |
 | `<HOST>_USERNAME` | 与密码成对 | 空 | 上游仓库用户名，`<HOST>` 由域名转换而来 |
 | `<HOST>_PASSWORD` | 与用户名成对 | 空 | 上游仓库密码 / Token，建议用加密 Secret |
+| `<HOST>_PATH_CONTAINS` | 否 | 空 | 路径必须包含的字符串，逗号分隔；多个值必须全部包含 |
+| `<HOST>_PATH_REGEX` | 否 | 空 | 路径必须匹配的 JavaScript 正则 |
+| `<HOST>_PATH_EXCLUDE_REGEX` | 否 | 空 | 路径命中该正则时拒绝 |
 
 域名转换规则：
 
@@ -85,6 +88,54 @@ https://<upstream-host>/<upstream-path>/<maven-path>
 - 凭据按主机隔离：`MAVEN_PKG_GITHUB_COM_*` 只会发送给 `maven.pkg.github.com`，不会发给其他主机。
 - Worker **不会转发客户端自带的 `Authorization`**。
 - 修改函数变量或 Secret 后需要重新部署版本。
+
+### 路径过滤
+
+每个上游域名可以单独配置路径过滤，变量名同样由域名转换：
+
+| 变量 | 说明 |
+| --- | --- |
+| `<HOST>_PATH_CONTAINS` | 路径必须包含的字符串，逗号分隔；多个值必须全部包含 |
+| `<HOST>_PATH_REGEX` | 路径必须匹配的 JavaScript 正则 |
+| `<HOST>_PATH_EXCLUDE_REGEX` | 路径命中该正则时拒绝 |
+
+过滤对象是 `/<upstream-path>`：不包含上游主机，包含前导 `/`，不包含查询参数。例如：
+
+```text
+请求   /github.com/owner/repo/releases/download/v1/app.jar
+过滤值 /owner/repo/releases/download/v1/app.jar
+```
+
+匹配规则：
+
+- `PATH_CONTAINS` 中的所有字符串都必须出现。
+- 设置了 `PATH_REGEX` 时必须匹配。
+- 设置了 `PATH_EXCLUDE_REGEX` 时不能匹配。
+- 正则区分大小写；直接填写正则本身，不要写 `/.../` 分隔符。
+- 路径会先做 URL 解码再匹配。
+- 不匹配返回 `403`，不会发起上游请求。
+
+示例：允许 `github.com`，但只允许下载 GitHub Releases 产物：
+
+```bash
+MAVEN_ALLOWED_HOSTS=maven.pkg.github.com,github.com
+GITHUB_COM_PATH_CONTAINS=/releases/download/
+```
+
+等价的锚定正则：
+
+```bash
+GITHUB_COM_PATH_REGEX='^/[^/]+/[^/]+/releases/download/'
+```
+
+示例：GitHub Packages 只允许发布版本，不允许 SNAPSHOT：
+
+```bash
+MAVEN_ALLOWED_HOSTS=maven.pkg.github.com
+MAVEN_PKG_GITHUB_COM_PATH_EXCLUDE_REGEX='-SNAPSHOT'
+```
+
+`/-/health` 会返回每个 host 的 `pathFilters`，便于确认配置。
 
 ## 部署到 ESA Workers
 
@@ -202,6 +253,16 @@ curl https://maven.example.com/-/health
 ```
 
 `authentication` 只会显示 `basic` / `anonymous` / `misconfigured`，不会返回密码。
+
+配置了路径过滤时，host 条目会多出：
+
+```json
+"pathFilters": {
+  "contains": ["/releases/download/"],
+  "regex": "^/[^/]+/[^/]+/releases/download/",
+  "excludeRegex": "\\.zip$"
+}
+```
 
 根路径 `/` 会返回 `name`、`version`、`description`、`author`、`repository`，均读取 `package.json`；`/-/health` 也会返回 `author`、`repository`。`repository` 直接返回 `package.json` 中的值，不做额外处理。
 
@@ -380,7 +441,7 @@ npm run dev
 - 客户端传入的 `Authorization`、`Cookie` 不会被转发。
 - 响应只回传 Maven 需要的头（`content-type`、`etag`、`last-modified`、`cache-control` 等），不转发 `set-cookie`、`www-authenticate`。
 - 上游返回 `401/403` 时会附加 `x-esa-maven-upstream-status`，方便区分“边缘凭据错误”和“客户端未认证”。
-- 上游 3xx 会被自动跟随；允许列表只校验第一段上游主机，不校验重定向目标。
+- 上游 3xx 会被自动跟随；允许列表和路径过滤只校验首次请求，不校验重定向目标。
 
 ## 限制与注意事项
 
@@ -395,12 +456,13 @@ npm run dev
 
 | 现象 | 排查方向 |
 | --- | --- |
-| `403` | 上游主机不在 `MAVEN_ALLOWED_HOSTS` 中 |
-| `400` | 第一段不是合法域名，或包含 IP、端口、下划线、IPv6 |
+| `403` | 上游主机不在 `MAVEN_ALLOWED_HOSTS` 中，或路径被 `_PATH_*` 过滤规则拦截 |
+| `400` | 第一段不是合法域名，或包含 IP、端口、下划线、IPv6；也可能是路径 URL 编码非法 |
 | `401`，响应头 `x-esa-maven-upstream-status: 401` | 该主机的 `_USERNAME` / `_PASSWORD` 错误、过期或缺少 `read:packages` |
 | `404` | 上游路径不存在；先用 `.../2026.0.0.0-SNAPSHOT/maven-metadata.xml` 验证路径，快照文件以元数据为准 |
 | `500` 且提示缺少 `_USERNAME` / `_PASSWORD` | 该主机的用户名和密码必须成对设置 |
 | `500` 且提示 `MAVEN_ALLOWED_HOSTS` | 允许列表中有非法域名 |
+| `500` 且提示 `_PATH_REGEX` | 路径过滤正则不合法 |
 | `502` | Worker 无法访问上游；检查域名、DNS 和 ESA 出网情况 |
 | `405` | 只支持 `GET` / `HEAD`，不支持部署 |
 | 健康检查中 `authentication` 为 `anonymous` | 该主机还没有配置 `_USERNAME` / `_PASSWORD` |
